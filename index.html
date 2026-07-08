@@ -1246,8 +1246,12 @@
             `;
         }
 
+        function formatAccurateListItem(item) {
+            return item.formFilled ? item.id : `${item.id}（精准但未约）`;
+        }
+
         function buildAccurateCopyText(dateStr, accurateList) {
-            const names = accurateList.map(item => item.id);
+            const names = accurateList.map(formatAccurateListItem);
             return `${dateStr} 精准名单（共 ${names.length} 人）\n${names.join('\n')}`;
         }
 
@@ -1470,7 +1474,7 @@
             const groupedAccurate = groupRecordsByDate(accurate);
             const dates = Object.keys(groupedAccurate).sort();
             const sections = dates.map(date => {
-                const names = groupedAccurate[date].map(item => item.id).join('\n');
+                const names = groupedAccurate[date].map(formatAccurateListItem).join('\n');
                 return `${date}（${groupedAccurate[date].length}人）\n${names}`;
             });
             return `${startDate} 到 ${endDate} 精准名单（共 ${accurate.length} 人）\n\n${sections.join('\n\n')}`;
