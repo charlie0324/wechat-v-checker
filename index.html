@@ -1,0 +1,1414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>+V 表单核对小工具</title>
+    <style>
+        /* =========================================
+           100% 纯本地原生 CSS，彻底告别外部依赖拦截！
+           ========================================= */
+        :root {
+            --primary: #2563eb; --primary-hover: #1d4ed8;
+            --success: #10b981; --success-hover: #059669;
+            --danger: #ef4444; --danger-hover: #dc2626;
+            --gray-50: #f9fafb; --gray-100: #f3f4f6; --gray-200: #e5e7eb;
+            --gray-500: #6b7280; --gray-600: #4b5563; --gray-700: #374151; --gray-800: #1f2937;
+        }
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background-color: var(--gray-50); color: var(--gray-800); line-height: 1.5; padding: 20px; }
+        
+        /* 布局与排版 */
+        .container { max-width: 1024px; margin: 0 auto; }
+        header { margin-bottom: 2rem; text-align: center; }
+        h1 { color: var(--primary); font-size: 1.8rem; margin-bottom: 0.5rem; }
+        .subtitle { color: var(--gray-500); font-size: 0.95rem; }
+        .grid { display: grid; grid-template-columns: 1fr; gap: 2rem; }
+        @media (min-width: 768px) {
+            .grid { grid-template-columns: 1fr 1fr; }
+            header { text-align: left; }
+        }
+        .section-stack { margin-top: 2rem; }
+        
+        /* 卡片组件 */
+        .card { background: #fff; border-radius: 12px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid var(--gray-200); margin-bottom: 1.5rem; }
+        .card-title { font-size: 1.2rem; font-weight: 600; margin-bottom: 1.2rem; padding-bottom: 0.8rem; border-bottom: 1px solid var(--gray-200); display: flex; align-items: center; justify-content: space-between; }
+        .title-left { display: flex; align-items: center; }
+        .step-icon { background: #dbeafe; color: var(--primary); width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-size: 0.9rem; font-weight: bold; }
+        .step-icon.green { background: #d1fae5; color: var(--success); }
+        
+        /* 表单与输入框 */
+        .form-group { margin-bottom: 1.2rem; }
+        .form-group label { display: block; font-size: 0.9rem; font-weight: 600; color: var(--gray-700); margin-bottom: 0.4rem; }
+        .flex-row { display: flex; align-items: center; gap: 10px; }
+        .justify-between { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 4px; }
+        input[type="text"], input[type="password"], input[type="date"], textarea, select { width: 100%; padding: 0.6rem 0.8rem; border: 1px solid var(--gray-200); border-radius: 6px; font-family: inherit; font-size: 0.95rem; transition: all 0.2s; background: #fff; }
+        input:focus, textarea:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+        input[type="file"] { padding: 0.4rem; font-size: 0.85rem; border: 1px dashed var(--gray-500); background: var(--gray-50); border-radius: 6px; cursor: pointer; flex: 1; }
+        .textarea-compact { min-height: 180px; resize: vertical; }
+        
+        /* 按钮组件 */
+        .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.6rem 1.2rem; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 0.95rem; }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn-primary { background: var(--primary); color: #fff; }
+        .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+        .btn-success { background: var(--success); color: #fff; }
+        .btn-success:hover { background: var(--success-hover); }
+        .btn-full { width: 100%; padding: 0.8rem; font-size: 1rem; }
+        .btn-outline { background: transparent; border: 1px solid var(--gray-200); color: var(--gray-700); }
+        .btn-outline:hover { background: var(--gray-50); }
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-danger:hover { background: var(--danger-hover); }
+        
+        /* 小操作按钮 */
+        .action-bar { display: flex; gap: 8px; }
+        .btn-sm { padding: 0.3rem 0.6rem; font-size: 0.8rem; border-radius: 4px; border: none; cursor: pointer; font-weight: 600; }
+        .bg-blue-light { background: #eff6ff; color: var(--primary); }
+        .bg-blue-light:hover { background: #dbeafe; }
+        .bg-green-light { background: #ecfdf5; color: var(--success); }
+        .bg-green-light:hover { background: #d1fae5; }
+        .bg-red-light { background: #fef2f2; color: var(--danger); }
+        .bg-red-light:hover { background: #fee2e2; }
+        
+        /* 数据表格 */
+        .table-wrap { max-height: 350px; overflow-y: auto; border: 1px solid var(--gray-100); border-radius: 6px; }
+        .table-wrap.tall { max-height: 460px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th { background: var(--gray-50); padding: 0.8rem; text-align: left; color: var(--gray-500); position: sticky; top: 0; border-bottom: 1px solid var(--gray-200); font-size: 0.8rem; text-transform: uppercase; z-index: 10; }
+        td { padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--gray-100); color: var(--gray-800); }
+        tr:hover td { background: var(--gray-50); }
+        .cell-id { max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+        
+        /* 表格内可编辑输入框 */
+        .table-input { width: 100%; padding: 4px 6px; border: 1px solid transparent; border-radius: 4px; background: transparent; font-size: 0.85rem; color: var(--primary); font-weight: 600; cursor: pointer; transition: 0.2s; }
+        .table-input:hover, .table-input:focus { border-color: var(--gray-200); background: #fff; outline: none; }
+        .table-input.normal-text { color: var(--gray-800); font-weight: normal; }
+        .precision-select { min-width: 92px; padding: 0.35rem 0.45rem; font-size: 0.85rem; font-weight: 700; color: var(--gray-700); }
+        .inline-select { width: auto; min-width: 110px; margin-top: 0.5rem; padding: 0.4rem 0.55rem; font-size: 0.85rem; }
+        
+        /* 查询结果提示框 */
+        .result-box { margin-top: 1rem; padding: 1rem; border-radius: 8px; text-align: center; border: 1px solid transparent; }
+        .res-success { background: #ecfdf5; border-color: #a7f3d0; }
+        .res-warning { background: #fffbeb; border-color: #fde68a; }
+        .res-error { background: #fef2f2; border-color: #fecaca; }
+        .res-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 0.5rem; }
+        .text-green { color: #059669; } .text-yellow { color: #d97706; } .text-red { color: #dc2626; }
+        
+        .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 20px; font-size: 0.85rem; font-weight: bold; }
+        .badge-green { background: #a7f3d0; color: #065f46; }
+        .badge-yellow { background: #fde68a; color: #92400e; }
+        .badge-red { background: #fecaca; color: #991b1b; }
+        .badge-blue { background: #dbeafe; color: #1d4ed8; }
+        .badge-gray { background: #e5e7eb; color: #374151; }
+        
+        /* 相似记录卡片 */
+        .similar-card { background: #fff; border: 1px solid #fde68a; border-radius: 6px; padding: 0.8rem; margin-bottom: 0.5rem; text-align: left; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        .similar-card-title { font-weight: bold; font-size: 1.05rem; color: var(--gray-800); }
+        .similar-card-info { font-size: 0.85rem; color: var(--gray-700); margin-top: 4px; }
+        .similar-tag { display: inline-block; background: #fff; border: 1px solid var(--gray-200); color: var(--gray-600); padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; margin: 4px 4px 0 0; }
+        
+        /* 弹窗与通用 */
+        .hidden { display: none !important; }
+        .text-center { text-align: center; }
+        .mt-2 { margin-top: 0.5rem; } .mt-3 { margin-top: 0.8rem; }
+        .text-sm { font-size: 0.85rem; } .text-xs { font-size: 0.75rem; }
+        .text-gray { color: var(--gray-500); } .text-blue { color: var(--primary); }
+        .text-right { text-align: right; }
+        .check-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+        .check-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; justify-content: space-between; margin-top: 1rem; }
+        .stats-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; margin: 1rem 0; }
+        .stat-tile { background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 8px; padding: 0.75rem; }
+        .stat-value { display: block; color: var(--gray-800); font-size: 1.35rem; font-weight: 800; line-height: 1.1; }
+        .stat-label { color: var(--gray-500); font-size: 0.78rem; }
+        .follow-check { width: 18px; height: 18px; cursor: pointer; accent-color: var(--success); }
+        .done-row td { color: var(--gray-500); background: #f8fafc; }
+        .done-row .person-name { text-decoration: line-through; }
+        .empty-panel { border: 1px dashed var(--gray-200); border-radius: 8px; color: var(--gray-500); padding: 1.2rem; text-align: center; background: var(--gray-50); }
+        .copy-panel { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+        .copy-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; margin-bottom: 0.75rem; }
+        .copy-title { font-weight: 800; color: #92400e; }
+        .copy-textarea { min-height: 150px; background: #fff; color: var(--gray-800); font-size: 0.95rem; line-height: 1.6; }
+        .period-controls { display: grid; grid-template-columns: 1fr; gap: 1rem; align-items: end; }
+        .daily-breakdown { display: grid; grid-template-columns: 1fr; gap: 0.75rem; margin-top: 1rem; }
+        .breakdown-item { border: 1px solid var(--gray-200); border-radius: 8px; padding: 0.8rem; background: var(--gray-50); display: flex; justify-content: space-between; gap: 0.8rem; align-items: center; }
+        .breakdown-date { font-weight: 800; color: var(--gray-800); }
+        .breakdown-meta { color: var(--gray-500); font-size: 0.82rem; margin-top: 0.15rem; }
+        .undo-status { min-height: 1.2em; }
+        .sync-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+        .sync-status { min-height: 1.3em; color: var(--gray-500); }
+        .toggle-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; color: var(--gray-700); }
+        .toggle-row input { width: auto; }
+        @media (min-width: 768px) {
+            .check-grid { grid-template-columns: 1fr 1fr; }
+            .stats-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .period-controls { grid-template-columns: 1fr 1fr auto; }
+            .daily-breakdown { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .sync-grid { grid-template-columns: 2fr 1fr; }
+        }
+        
+        code { background: #e5e7eb; padding: 2px 4px; border-radius: 4px; font-family: monospace; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- 页面头部 -->
+        <header>
+            <h1>+V 表单核对小工具</h1>
+            <p class="subtitle">录入每日 +V 名单，核对表单填写状态，生成可复制的催填名单。</p>
+        </header>
+
+        <!-- 云同步区域 -->
+        <div class="card">
+            <div class="card-title">
+                <div class="title-left">
+                    <span class="step-icon green">☁</span> 云同步
+                </div>
+                <span class="text-xs text-gray">Google Sheets 作为后台数据库</span>
+            </div>
+
+            <div class="sync-grid">
+                <div class="form-group">
+                    <label>Google Apps Script 接口地址</label>
+                    <input type="text" id="cloudUrlInput" placeholder="粘贴部署后的 Web App URL">
+                </div>
+                <div class="form-group">
+                    <label>同步密钥</label>
+                    <input type="password" id="cloudSecretInput" placeholder="自己设置一串密码">
+                </div>
+            </div>
+
+            <div class="check-actions">
+                <div class="action-bar">
+                    <button onclick="saveCloudSettings()" class="btn btn-outline">保存同步设置</button>
+                    <button onclick="pullCloudData()" class="btn btn-primary">从云端拉取</button>
+                    <button onclick="pushCloudData()" class="btn btn-success">上传到云端</button>
+                </div>
+                <label class="toggle-row">
+                    <input type="checkbox" id="cloudAutoSyncInput" onchange="saveCloudSettings(false)">
+                    自动同步本地改动
+                </label>
+            </div>
+            <div id="cloudSyncStatus" class="sync-status text-sm mt-2">未配置云同步。</div>
+        </div>
+
+        <div class="grid">
+            <!-- 左侧：录入数据区域 -->
+            <div class="card">
+                <div class="card-title">
+                    <div class="title-left">
+                        <span class="step-icon">1</span> 录入今日 +V 名单
+                    </div>
+                </div>
+                
+                <!-- 选择日期 -->
+                <div class="form-group">
+                    <label>选择 +V 日期</label>
+                    <input type="date" id="dateInput">
+                </div>
+
+                <!-- 手动录入名单 -->
+                <div class="form-group">
+                    <label>输入名单 (每行一个ID)</label>
+                    <textarea id="idListInput" rows="8" placeholder="直接粘贴今天加微的人，每行一个ID..."></textarea>
+                </div>
+
+                <!-- 保存按钮 -->
+                <button onclick="saveData()" class="btn btn-primary btn-full">
+                    💾 保存名单到本地库
+                </button>
+            </div>
+
+            <!-- 右侧：查询与核对区域 -->
+            <div>
+                <!-- 查询卡片 -->
+                <div class="card">
+                    <div class="card-title">
+                        <div class="title-left">
+                            <span class="step-icon green">2</span> 核对表单人员
+                        </div>
+                    </div>
+                    
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>输入表单填写的ID名</label>
+                        <div class="flex-row">
+                            <input type="text" id="searchInput" oninput="searchData()" onkeyup="if(event.key === 'Enter') searchData()" placeholder="输入ID如: 张三" style="font-size: 1.1rem; padding: 0.8rem;">
+                            <button onclick="searchData()" class="btn btn-success" style="padding: 0.8rem 1.5rem;">查询</button>
+                        </div>
+                    </div>
+
+                    <!-- 查询结果展示 -->
+                    <div id="resultBox" class="hidden result-box"></div>
+                </div>
+
+                <!-- 数据总览卡片 -->
+                <div class="card">
+                    <div class="card-title" style="margin-bottom: 0.8rem;">
+                        <div class="title-left">📚 本地数据库</div>
+                        <div class="action-bar">
+                            <input type="file" id="importInput" accept=".csv" class="hidden" onchange="importData(event)">
+                            <button onclick="undoLastAction()" class="btn-sm bg-blue-light">↶ 撤回</button>
+                            <button onclick="document.getElementById('importInput').click()" class="btn-sm bg-blue-light">📥 导入</button>
+                            <button onclick="exportData()" class="btn-sm bg-green-light">📤 导出</button>
+                            <button onclick="clearData()" class="btn-sm bg-red-light">清空</button>
+                        </div>
+                    </div>
+                    
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID 名称</th>
+                                    <th>+V 日期</th>
+                                    <th>是否精准</th>
+                                    <th>表单</th>
+                                    <th style="text-align: right;">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dataTableBody">
+                                <!-- 表格数据由JS动态插入 -->
+                            </tbody>
+                        </table>
+                        <div id="emptyDataMsg" class="hidden text-center text-gray" style="padding: 2rem 0;">
+                            暂无录入数据
+                        </div>
+                    </div>
+                    <div id="undoStatus" class="undo-status text-xs text-gray mt-2"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 表单状态处理区域 -->
+        <div class="section-stack">
+            <div class="card">
+                <div class="card-title">
+                    <div class="title-left">
+                        <span class="step-icon">3</span> 表单状态处理
+                    </div>
+                    <span class="text-xs text-gray">先标记已填，再生成未填名单</span>
+                </div>
+
+                <div class="form-group">
+                    <label>已填表人员ID (每行一个)</label>
+                    <textarea id="formFilledInput" class="textarea-compact" placeholder="粘贴已经填写表单的人。系统会在整个本地数据库里模糊搜索，匹配到后标记为“已填”。"></textarea>
+                </div>
+
+                <div class="check-actions">
+                    <div class="action-bar">
+                        <button onclick="markFilledFromInput()" class="btn btn-success">标记为已填表</button>
+                        <button onclick="clearFilledInput()" class="btn btn-outline">清空输入</button>
+                    </div>
+                    <span class="text-sm text-gray">匹配不确定时会列出候选，不会乱标。</span>
+                </div>
+
+                <div id="markResults" class="hidden mt-3"></div>
+
+                <div class="form-group mt-3">
+                    <label>筛选未填表日期</label>
+                    <div class="flex-row">
+                        <input type="date" id="checkDateInput">
+                        <button onclick="generateMissingList()" class="btn btn-primary" style="flex-shrink: 0;">生成未填名单</button>
+                    </div>
+                </div>
+
+                <div class="check-actions">
+                    <div class="action-bar">
+                        <button onclick="copyMissingList()" class="btn btn-outline">复制未填名单</button>
+                        <button onclick="clearMissingResults()" class="btn btn-outline">清空结果</button>
+                    </div>
+                    <span id="checkHint" class="text-sm text-gray">未标记“已填”的人，会被算作未填表。</span>
+                </div>
+
+                <div id="checkSummary" class="stats-row hidden"></div>
+                <div id="checkResults" class="hidden"></div>
+            </div>
+        </div>
+
+        <!-- 周期统计区域 -->
+        <div class="section-stack">
+            <div class="card">
+                <div class="card-title">
+                    <div class="title-left">
+                        <span class="step-icon green">4</span> 周期表单统计
+                    </div>
+                    <span class="text-xs text-gray">按日期区间汇总未填人员和填单率</span>
+                </div>
+
+                <div class="period-controls">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>周期开始日期</label>
+                        <input type="date" id="periodStartInput">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>周期结束日期</label>
+                        <input type="date" id="periodEndInput">
+                    </div>
+                    <button onclick="generatePeriodReport()" class="btn btn-primary">生成周期统计</button>
+                </div>
+
+                <div class="check-actions">
+                    <div class="action-bar">
+                        <button onclick="copyPeriodMissingList()" class="btn btn-outline">复制周期未填名单</button>
+                        <button onclick="clearPeriodReport()" class="btn btn-outline">清空周期结果</button>
+                    </div>
+                    <span id="periodHint" class="text-sm text-gray">例如 7月3号 到 7月9号，可以看这个周期整体填单率。</span>
+                </div>
+
+                <div id="periodSummary" class="stats-row hidden"></div>
+                <div id="periodResults" class="hidden"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 逻辑代码 -->
+    <script>
+        // 初始化：设置今日日期
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('dateInput').value = today;
+        document.getElementById('checkDateInput').value = today;
+        document.getElementById('periodStartInput').value = today;
+        document.getElementById('periodEndInput').value = today;
+
+        // 从 LocalStorage 获取数据
+        let db = JSON.parse(localStorage.getItem('wechat_tracker_db')) || [];
+        let currentMissingState = null;
+        let currentPeriodState = null;
+        let undoStack = JSON.parse(localStorage.getItem('wechat_tracker_undo_stack')) || [];
+        let cloudConfig = JSON.parse(localStorage.getItem('wechat_tracker_cloud_config')) || { url: '', secret: '', autoSync: false };
+        let cloudPushTimer = null;
+        let isCloudSyncing = false;
+
+        // 页面加载完成后渲染表格
+        window.onload = () => {
+            loadCloudSettingsToForm();
+            renderTable();
+            updateUndoStatus();
+        };
+
+        // --- 表单状态处理 ---
+        function cloneDb() {
+            return JSON.parse(JSON.stringify(db));
+        }
+
+        function pushUndo(label) {
+            undoStack.push({
+                label,
+                db: cloneDb(),
+                time: new Date().toISOString()
+            });
+            if (undoStack.length > 15) undoStack.shift();
+            localStorage.setItem('wechat_tracker_undo_stack', JSON.stringify(undoStack));
+            updateUndoStatus();
+        }
+
+        function saveDb(skipCloudSync = false) {
+            localStorage.setItem('wechat_tracker_db', JSON.stringify(db));
+            if (!skipCloudSync && cloudConfig.autoSync) queueCloudPush();
+        }
+
+        function refreshViews() {
+            renderTable();
+            if (currentMissingState) generateMissingList(true);
+            if (currentPeriodState) generatePeriodReport(true);
+            updateUndoStatus();
+        }
+
+        function updateUndoStatus() {
+            const el = document.getElementById('undoStatus');
+            if (!el) return;
+            if (undoStack.length === 0) {
+                el.innerText = '暂无可撤回动作';
+                return;
+            }
+            const last = undoStack[undoStack.length - 1];
+            el.innerText = `可撤回：${last.label}`;
+        }
+
+        function undoLastAction() {
+            if (undoStack.length === 0) {
+                alert("暂无可撤回的动作。");
+                return;
+            }
+
+            const last = undoStack.pop();
+            db = last.db || [];
+            saveDb();
+            localStorage.setItem('wechat_tracker_undo_stack', JSON.stringify(undoStack));
+            refreshViews();
+            searchData();
+            alert(`已撤回：${last.label}`);
+        }
+
+        function loadCloudSettingsToForm() {
+            document.getElementById('cloudUrlInput').value = cloudConfig.url || '';
+            document.getElementById('cloudSecretInput').value = cloudConfig.secret || '';
+            document.getElementById('cloudAutoSyncInput').checked = !!cloudConfig.autoSync;
+            setCloudStatus(cloudConfig.url ? '云同步已配置。' : '未配置云同步。');
+        }
+
+        function saveCloudSettings(showAlert = true) {
+            cloudConfig = {
+                url: document.getElementById('cloudUrlInput').value.trim(),
+                secret: document.getElementById('cloudSecretInput').value.trim(),
+                autoSync: document.getElementById('cloudAutoSyncInput').checked
+            };
+            localStorage.setItem('wechat_tracker_cloud_config', JSON.stringify(cloudConfig));
+            setCloudStatus(cloudConfig.url ? '同步设置已保存。' : '请先填写 Google Apps Script 接口地址。');
+            if (showAlert) alert("云同步设置已保存。");
+        }
+
+        function setCloudStatus(message, type = 'normal') {
+            const el = document.getElementById('cloudSyncStatus');
+            if (!el) return;
+            el.innerText = message;
+            el.className = `sync-status text-sm mt-2 ${type === 'error' ? 'text-red' : type === 'success' ? 'text-green' : 'text-gray'}`;
+        }
+
+        function requireCloudConfig() {
+            saveCloudSettings(false);
+            if (!cloudConfig.url || !cloudConfig.secret) {
+                setCloudStatus('请先填写接口地址和同步密钥。', 'error');
+                alert("请先填写接口地址和同步密钥。");
+                return false;
+            }
+            return true;
+        }
+
+        function getCloudUrl(action = '') {
+            if (!action) return cloudConfig.url;
+            const separator = cloudConfig.url.includes('?') ? '&' : '?';
+            return `${cloudConfig.url}${separator}action=${encodeURIComponent(action)}&secret=${encodeURIComponent(cloudConfig.secret)}`;
+        }
+
+        function getCloudUrlWithParams(params) {
+            const query = Object.keys(params)
+                .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
+                .join('&');
+            const separator = cloudConfig.url.includes('?') ? '&' : '?';
+            return `${cloudConfig.url}${separator}${query}`;
+        }
+
+        async function readCloudResponse(response) {
+            const text = await response.text();
+            try {
+                return JSON.parse(text);
+            } catch (error) {
+                throw new Error(text || '云端返回不是 JSON，请检查 Apps Script 是否部署为 Web App。');
+            }
+        }
+
+        function queueCloudPush() {
+            if (!cloudConfig.url || !cloudConfig.secret || isCloudSyncing) return;
+            clearTimeout(cloudPushTimer);
+            cloudPushTimer = setTimeout(() => {
+                pushCloudData(true);
+            }, 900);
+        }
+
+        async function pushCloudData(silent = false) {
+            if (!requireCloudConfig()) return;
+            isCloudSyncing = true;
+            if (!silent) setCloudStatus('正在上传到云端...');
+
+            const payload = JSON.stringify({
+                secret: cloudConfig.secret,
+                data: db,
+                updatedAt: new Date().toISOString()
+            });
+
+            try {
+                const response = await fetch(getCloudUrl(), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: payload
+                });
+                const result = await readCloudResponse(response);
+                if (!result.ok) throw new Error(result.error || '云端保存失败');
+                if (typeof result.count !== 'number') throw new Error('云端没有确认保存，请重新部署最新版 Apps Script。');
+                setCloudStatus(`已上传 ${db.length} 条数据到云端。`, 'success');
+                if (!silent) alert("已上传到云端。");
+            } catch (error) {
+                console.warn('标准上传失败，尝试兼容模式:', error);
+                try {
+                    await fetch(getCloudUrl(), {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: payload
+                    });
+                    setCloudStatus(`已用兼容模式发送 ${db.length} 条数据。浏览器限制下无法读取云端确认。`, 'success');
+                    if (!silent) alert("已用兼容模式发送到云端。建议在另一台设备点“从云端拉取”验证。");
+                } catch (fallbackError) {
+                    console.error(fallbackError);
+                    setCloudStatus(`上传失败：${fallbackError.message}`, 'error');
+                    if (!silent) alert(`上传失败：${fallbackError.message}`);
+                }
+            } finally {
+                isCloudSyncing = false;
+            }
+        }
+
+        function loadCloudDataJsonp() {
+            return new Promise((resolve, reject) => {
+                const callbackName = `wechatTrackerCloudCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+                const script = document.createElement('script');
+                const timeout = setTimeout(() => {
+                    cleanup();
+                    reject(new Error('云端拉取超时，请检查 Web App URL、部署权限和网络。'));
+                }, 20000);
+
+                function cleanup() {
+                    clearTimeout(timeout);
+                    delete window[callbackName];
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                }
+
+                window[callbackName] = (result) => {
+                    cleanup();
+                    resolve(result);
+                };
+
+                script.onerror = () => {
+                    cleanup();
+                    reject(new Error('云端脚本加载失败，请检查 Web App URL 和访问权限。'));
+                };
+                script.src = getCloudUrlWithParams({
+                    action: 'load',
+                    secret: cloudConfig.secret,
+                    callback: callbackName
+                });
+                document.body.appendChild(script);
+            });
+        }
+
+        async function pullCloudData() {
+            if (!requireCloudConfig()) return;
+            if (db.length > 0 && !confirm("从云端拉取会用云端数据覆盖当前本地数据，确认继续吗？")) return;
+
+            isCloudSyncing = true;
+            setCloudStatus('正在从云端拉取...');
+
+            try {
+                const result = await loadCloudDataJsonp();
+                if (!result.ok) throw new Error(result.error || '云端读取失败');
+
+                pushUndo('从云端拉取前的本地数据');
+                db = Array.isArray(result.data) ? result.data : [];
+                saveDb(true);
+                refreshViews();
+                setCloudStatus(`已从云端拉取 ${db.length} 条数据。`, 'success');
+                alert("已从云端拉取数据。");
+            } catch (error) {
+                console.error(error);
+                setCloudStatus(`拉取失败：${error.message}`, 'error');
+                alert(`拉取失败：${error.message}`);
+            } finally {
+                isCloudSyncing = false;
+            }
+        }
+
+        function cleanId(str) {
+            return (str || '').replace(/\s+/g, '').toLowerCase();
+        }
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function parseIdList(text) {
+            const seen = new Set();
+            const list = [];
+            (text || '').split('\n').forEach(line => {
+                const raw = line.trim();
+                const key = cleanId(raw);
+                if (raw && key && !seen.has(key)) {
+                    seen.add(key);
+                    list.push({ raw, key });
+                }
+            });
+            return list;
+        }
+
+        function similarityScore(a, b) {
+            if (!a || !b) return 0;
+            if (a === b) return 100;
+            if (a.includes(b) || b.includes(a)) {
+                const shorter = Math.min(a.length, b.length);
+                const longer = Math.max(a.length, b.length);
+                return 72 + Math.round((shorter / longer) * 20);
+            }
+
+            const rows = Array(a.length + 1).fill(0).map(() => Array(b.length + 1).fill(0));
+            for (let i = 1; i <= a.length; i++) {
+                for (let j = 1; j <= b.length; j++) {
+                    rows[i][j] = a[i - 1] === b[j - 1]
+                        ? rows[i - 1][j - 1] + 1
+                        : Math.max(rows[i - 1][j], rows[i][j - 1]);
+                }
+            }
+            return Math.round((rows[a.length][b.length] / Math.max(a.length, b.length)) * 70);
+        }
+
+        function getRecordLabel(record) {
+            return `${record.id}${record.date ? ` (${record.date})` : ''} / ${getPrecisionLabel(record.precisionStatus)}`;
+        }
+
+        function getPrecisionValue(value) {
+            return ['accurate', 'unknown', 'inaccurate'].includes(value) ? value : 'unknown';
+        }
+
+        function getPrecisionLabel(value) {
+            const labels = {
+                accurate: '精准',
+                unknown: '不确定',
+                inaccurate: '不精准'
+            };
+            return labels[getPrecisionValue(value)];
+        }
+
+        function parsePrecisionStatus(value) {
+            const text = (value || '').trim();
+            if (text === '精准' || text === '确定精准' || text.toLowerCase() === 'accurate') return 'accurate';
+            if (text === '不精准' || text.toLowerCase() === 'inaccurate') return 'inaccurate';
+            return 'unknown';
+        }
+
+        function getPrecisionBadge(value) {
+            const status = getPrecisionValue(value);
+            if (status === 'accurate') return `<span class="badge badge-green">精准</span>`;
+            if (status === 'inaccurate') return `<span class="badge badge-red">不精准</span>`;
+            return `<span class="badge badge-gray">不确定</span>`;
+        }
+
+        function renderPrecisionSelect(id, value, extraClass = 'precision-select') {
+            const encodedId = encodeURIComponent(id);
+            const status = getPrecisionValue(value);
+            return `
+                <select class="${extraClass}" onchange="updatePrecisionById('${encodedId}', this.value)">
+                    <option value="accurate" ${status === 'accurate' ? 'selected' : ''}>精准</option>
+                    <option value="unknown" ${status === 'unknown' ? 'selected' : ''}>不确定</option>
+                    <option value="inaccurate" ${status === 'inaccurate' ? 'selected' : ''}>不精准</option>
+                </select>
+            `;
+        }
+
+        function findFormMatches(rawId) {
+            const key = cleanId(rawId);
+            if (!key) return [];
+
+            return db
+                .map((record, index) => {
+                    const idScore = similarityScore(key, cleanId(record.id));
+                    return { record, index, score: idScore };
+                })
+                .filter(match => match.score >= 50)
+                .sort((a, b) => b.score - a.score || (b.record.timestamp || 0) - (a.record.timestamp || 0))
+                .slice(0, 5);
+        }
+
+        function markRecordFilled(index, sourceText) {
+            if (!db[index]) return false;
+            db[index].formFilled = true;
+            db[index].formFilledAt = new Date().toISOString();
+            db[index].formMatchedFrom = sourceText || db[index].id;
+            return true;
+        }
+
+        function markFilledFromInput() {
+            const input = document.getElementById('formFilledInput');
+            const entries = parseIdList(input.value);
+            const resultBox = document.getElementById('markResults');
+
+            if (entries.length === 0) {
+                alert("请先粘贴已经填写表单的人。");
+                return;
+            }
+
+            pushUndo(`批量标记已填表 (${entries.length} 人)`);
+            let markedCount = 0;
+            const marked = [];
+            const uncertain = [];
+            const notFound = [];
+
+            entries.forEach(entry => {
+                const matches = findFormMatches(entry.raw);
+                if (matches.length === 0) {
+                    notFound.push(entry.raw);
+                    return;
+                }
+
+                const best = matches[0];
+                const second = matches[1];
+                const confident = best.score >= 88 || (best.score >= 72 && (!second || best.score - second.score >= 12));
+
+                if (confident) {
+                    if (markRecordFilled(best.index, entry.raw)) {
+                        markedCount++;
+                        marked.push({ input: entry.raw, record: db[best.index], score: best.score });
+                    }
+                } else {
+                    uncertain.push({ input: entry.raw, matches });
+                }
+            });
+
+            saveDb();
+            refreshViews();
+            resultBox.classList.remove('hidden');
+            resultBox.innerHTML = renderMarkResults(marked, uncertain, notFound);
+
+            document.getElementById('checkHint').innerText = `已自动标记 ${markedCount} 人。未确定的人请在候选里手动点选。`;
+        }
+
+        function renderMarkResults(marked, uncertain, notFound) {
+            const markedHtml = marked.length > 0 ? `
+                <div class="result-box res-success" style="text-align: left;">
+                    <div class="res-title text-green">已标记 ${marked.length} 人为已填表</div>
+                    <div>${marked.map(item => `<span class="similar-tag">${escapeHtml(item.input)} → ${escapeHtml(getRecordLabel(item.record))}</span>`).join('')}</div>
+                </div>
+            ` : '';
+
+            const uncertainHtml = uncertain.length > 0 ? `
+                <div class="result-box res-warning" style="text-align: left;">
+                    <div class="res-title text-yellow">需要确认 ${uncertain.length} 人</div>
+                    ${uncertain.map(item => `
+                        <div class="similar-card">
+                            <div class="similar-card-title">${escapeHtml(item.input)}</div>
+                            <div class="similar-card-info">请选择正确的数据库记录：</div>
+                            <div class="mt-2">
+                                ${item.matches.map(match => `
+                                    <button class="btn-sm bg-blue-light" onclick="confirmFuzzyMatch(${match.index}, '${encodeURIComponent(item.input)}')">
+                                        ${escapeHtml(getRecordLabel(match.record))} · ${match.score}%
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            ` : '';
+
+            const notFoundHtml = notFound.length > 0 ? `
+                <div class="result-box res-error" style="text-align: left;">
+                    <div class="res-title text-red">数据库未找到 ${notFound.length} 人</div>
+                    <div>${notFound.map(name => `<span class="similar-tag">${escapeHtml(name)}</span>`).join('')}</div>
+                </div>
+            ` : '';
+
+            return markedHtml + uncertainHtml + notFoundHtml || '<div class="empty-panel">没有可处理的结果。</div>';
+        }
+
+        function confirmFuzzyMatch(index, inputText) {
+            const decodedInput = decodeURIComponent(inputText || '');
+            pushUndo(`确认模糊匹配：${db[index] ? db[index].id : decodedInput}`);
+            if (markRecordFilled(index, decodedInput)) {
+                saveDb();
+                refreshViews();
+                alert(`已标记：${db[index].id} 已填表`);
+            }
+        }
+
+        function clearFilledInput() {
+            document.getElementById('formFilledInput').value = '';
+            document.getElementById('markResults').classList.add('hidden');
+            document.getElementById('markResults').innerHTML = '';
+        }
+
+        function markRecordFilledById(encodedId) {
+            const id = decodeURIComponent(encodedId || '');
+            const index = db.findIndex(item => item.id === id);
+            if (index === -1) {
+                alert("没有找到这条数据库记录。");
+                return;
+            }
+
+            pushUndo(`标记已填表：${db[index].id}`);
+            markRecordFilled(index, id);
+            saveDb();
+            refreshViews();
+            searchData();
+            alert(`已标记：${db[index].id} 已填表`);
+        }
+
+        function updateFormFilledById(encodedId, filled) {
+            const id = decodeURIComponent(encodedId || '');
+            const index = db.findIndex(item => item.id === id);
+            if (index === -1) {
+                alert("没有找到这条数据库记录。");
+                return;
+            }
+            if (!!db[index].formFilled === !!filled) return;
+
+            pushUndo(`${filled ? '标记已填表' : '撤销已填标记'}：${db[index].id}`);
+            db[index].formFilled = !!filled;
+            if (filled) {
+                db[index].formFilledAt = new Date().toISOString();
+                db[index].formMatchedFrom = db[index].formMatchedFrom || db[index].id;
+            } else {
+                delete db[index].formFilledAt;
+                delete db[index].formMatchedFrom;
+            }
+
+            saveDb();
+            refreshViews();
+            searchData();
+        }
+
+        function generateMissingList(silent = false) {
+            const dateStr = document.getElementById('checkDateInput').value;
+            const resultWrap = document.getElementById('checkResults');
+            const summary = document.getElementById('checkSummary');
+            if (!dateStr) {
+                if (!silent) alert("请先选择要筛选的日期。");
+                return;
+            }
+
+            const dayRecords = db.filter(item => item.date === dateStr);
+            const filled = dayRecords.filter(item => item.formFilled);
+            const missing = dayRecords.filter(item => !item.formFilled);
+            const accurate = dayRecords.filter(item => getPrecisionValue(item.precisionStatus) === 'accurate');
+
+            if (dayRecords.length === 0) {
+                currentMissingState = null;
+                summary.classList.add('hidden');
+                resultWrap.classList.add('hidden');
+                if (!silent) alert("这一天还没有保存 +V 名单，请先在上方录入并保存。");
+                return;
+            }
+
+            currentMissingState = { date: dateStr, dayRecords, filled, missing, accurate };
+            renderMissingResults();
+            summary.classList.remove('hidden');
+            resultWrap.classList.remove('hidden');
+        }
+
+        function renderMissingResults() {
+            if (!currentMissingState) return;
+
+            const { date, dayRecords, filled, missing, accurate } = currentMissingState;
+            const summary = document.getElementById('checkSummary');
+            const resultWrap = document.getElementById('checkResults');
+
+            summary.innerHTML = `
+                <div class="stat-tile"><span class="stat-value">${dayRecords.length}</span><span class="stat-label">当天加微</span></div>
+                <div class="stat-tile"><span class="stat-value">${filled.length}</span><span class="stat-label">已填表</span></div>
+                <div class="stat-tile"><span class="stat-value">${missing.length}</span><span class="stat-label">未填表</span></div>
+                <div class="stat-tile"><span class="stat-value">${dayRecords.length ? Math.round((filled.length / dayRecords.length) * 100) : 0}%</span><span class="stat-label">填表率</span></div>
+                <div class="stat-tile"><span class="stat-value">${accurate.length}</span><span class="stat-label">精准人数</span></div>
+                <div class="stat-tile"><span class="stat-value">${dayRecords.length ? Math.round((accurate.length / dayRecords.length) * 100) : 0}%</span><span class="stat-label">精准率</span></div>
+            `;
+
+            if (missing.length === 0) {
+                resultWrap.innerHTML = `
+                    <div class="empty-panel">
+                        <div class="res-title text-green">全部匹配完成</div>
+                        <div class="text-sm">${date} 的 +V 人员都已经标记为已填表。</div>
+                    </div>
+                `;
+                document.getElementById('checkHint').innerText = "核对完成，没有未填表人员。";
+                return;
+            }
+
+            const rows = missing.map((item) => `
+                    <tr>
+                        <td class="person-name" title="${escapeHtml(item.id)}">${escapeHtml(item.id)}</td>
+                        <td>${getPrecisionBadge(item.precisionStatus)}</td>
+                        <td class="text-right"><span class="badge badge-red">未填</span></td>
+                    </tr>
+                `).join('');
+
+            resultWrap.innerHTML = `
+                ${renderMissingCopyBlock(date, missing)}
+                <div class="table-wrap tall">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>未填表人员</th>
+                                <th>是否精准</th>
+                                <th class="text-right">状态</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+                <div class="mt-2 text-sm text-gray">
+                    ${date} 加微 ${dayRecords.length} 人；已填表 ${filled.length} 人；未填表 ${missing.length} 人。
+                </div>
+            `;
+            document.getElementById('checkHint').innerText = `${date} 还有 ${missing.length} 人未填表。`;
+        }
+
+        function buildMissingCopyText(dateStr, missingList) {
+            const names = missingList.map(item => item.id);
+            return `${dateStr} 未填表名单（共 ${names.length} 人）\n${names.join('\n')}`;
+        }
+
+        function renderMissingCopyBlock(dateStr, missingList) {
+            const copyText = buildMissingCopyText(dateStr, missingList);
+            return `
+                <div class="copy-panel">
+                    <div class="copy-panel-head">
+                        <div>
+                            <div class="copy-title">${dateStr} 未填表名单</div>
+                            <div class="text-sm text-gray">共 ${missingList.length} 人，可以直接复制去催填。</div>
+                        </div>
+                        <button onclick="copyMissingList()" class="btn btn-success">复制这份名单</button>
+                    </div>
+                    <textarea id="missingCopyText" class="copy-textarea" readonly>${escapeHtml(copyText)}</textarea>
+                </div>
+            `;
+        }
+
+        async function copyMissingList() {
+            if (!currentMissingState) generateMissingList();
+            if (!currentMissingState) return;
+
+            const missing = currentMissingState.missing.map(item => item.id);
+
+            if (missing.length === 0) {
+                alert("当前没有未填表人员可复制。");
+                return;
+            }
+
+            const copyBox = document.getElementById('missingCopyText');
+            const text = copyBox ? copyBox.value : buildMissingCopyText(currentMissingState.date, currentMissingState.missing);
+            try {
+                await navigator.clipboard.writeText(text);
+                alert(`已复制 ${missing.length} 个未填表人员。`);
+            } catch (error) {
+                const helper = document.createElement('textarea');
+                helper.value = text;
+                document.body.appendChild(helper);
+                helper.select();
+                document.execCommand('copy');
+                document.body.removeChild(helper);
+                alert(`已复制 ${missing.length} 个未填表人员。`);
+            }
+        }
+
+        function clearMissingResults() {
+            document.getElementById('checkSummary').classList.add('hidden');
+            document.getElementById('checkResults').classList.add('hidden');
+            document.getElementById('checkResults').innerHTML = '';
+            currentMissingState = null;
+            document.getElementById('checkHint').innerText = "未标记“已填”的人，会被算作未填表。";
+        }
+
+        function getRecordsInRange(startDate, endDate) {
+            return db.filter(item => item.date && item.date >= startDate && item.date <= endDate);
+        }
+
+        function groupRecordsByDate(records) {
+            return records.reduce((grouped, record) => {
+                if (!grouped[record.date]) grouped[record.date] = [];
+                grouped[record.date].push(record);
+                return grouped;
+            }, {});
+        }
+
+        function generatePeriodReport(silent = false) {
+            const startDate = document.getElementById('periodStartInput').value;
+            const endDate = document.getElementById('periodEndInput').value;
+            const summary = document.getElementById('periodSummary');
+            const resultWrap = document.getElementById('periodResults');
+
+            if (!startDate || !endDate) {
+                if (!silent) alert("请先选择周期开始和结束日期。");
+                return;
+            }
+
+            if (startDate > endDate) {
+                if (!silent) alert("开始日期不能晚于结束日期。");
+                return;
+            }
+
+            const records = getRecordsInRange(startDate, endDate);
+            const filled = records.filter(item => item.formFilled);
+            const missing = records.filter(item => !item.formFilled);
+            const accurate = records.filter(item => getPrecisionValue(item.precisionStatus) === 'accurate');
+            const grouped = groupRecordsByDate(records);
+            const days = Object.keys(grouped).sort();
+
+            if (records.length === 0) {
+                currentPeriodState = null;
+                summary.classList.add('hidden');
+                resultWrap.classList.add('hidden');
+                if (!silent) alert("这个周期里还没有 +V 数据。");
+                return;
+            }
+
+            currentPeriodState = { startDate, endDate, records, filled, missing, accurate, grouped, days };
+            renderPeriodReport();
+            summary.classList.remove('hidden');
+            resultWrap.classList.remove('hidden');
+        }
+
+        function renderPeriodReport() {
+            if (!currentPeriodState) return;
+
+            const { startDate, endDate, records, filled, missing, accurate, grouped, days } = currentPeriodState;
+            const summary = document.getElementById('periodSummary');
+            const resultWrap = document.getElementById('periodResults');
+            const rate = records.length ? Math.round((filled.length / records.length) * 100) : 0;
+            const precisionRate = records.length ? Math.round((accurate.length / records.length) * 100) : 0;
+
+            summary.innerHTML = `
+                <div class="stat-tile"><span class="stat-value">${records.length}</span><span class="stat-label">周期加微</span></div>
+                <div class="stat-tile"><span class="stat-value">${filled.length}</span><span class="stat-label">已填表</span></div>
+                <div class="stat-tile"><span class="stat-value">${missing.length}</span><span class="stat-label">未填表</span></div>
+                <div class="stat-tile"><span class="stat-value">${rate}%</span><span class="stat-label">周期填单率</span></div>
+                <div class="stat-tile"><span class="stat-value">${accurate.length}</span><span class="stat-label">精准人数</span></div>
+                <div class="stat-tile"><span class="stat-value">${precisionRate}%</span><span class="stat-label">周期精准率</span></div>
+            `;
+
+            const breakdownHtml = days.map(date => {
+                const list = grouped[date];
+                const dayFilled = list.filter(item => item.formFilled).length;
+                const dayMissing = list.length - dayFilled;
+                const dayAccurate = list.filter(item => getPrecisionValue(item.precisionStatus) === 'accurate').length;
+                const dayRate = list.length ? Math.round((dayFilled / list.length) * 100) : 0;
+                const dayPrecisionRate = list.length ? Math.round((dayAccurate / list.length) * 100) : 0;
+                return `
+                    <div class="breakdown-item">
+                        <div>
+                            <div class="breakdown-date">${date}</div>
+                            <div class="breakdown-meta">加微 ${list.length} 人 · 已填 ${dayFilled} 人 · 未填 ${dayMissing} 人 · 精准 ${dayAccurate} 人</div>
+                        </div>
+                        <span class="badge ${dayMissing === 0 ? 'badge-green' : 'badge-yellow'}">填${dayRate}% / 精${dayPrecisionRate}%</span>
+                    </div>
+                `;
+            }).join('');
+
+            if (missing.length === 0) {
+                resultWrap.innerHTML = `
+                    <div class="empty-panel">
+                        <div class="res-title text-green">这个周期全部已填表</div>
+                        <div class="text-sm">${startDate} 到 ${endDate} 的 +V 人员都已经标记为已填表。</div>
+                    </div>
+                    <div class="daily-breakdown">${breakdownHtml}</div>
+                `;
+                document.getElementById('periodHint').innerText = `${startDate} 到 ${endDate} 没有未填表人员。`;
+                return;
+            }
+
+            resultWrap.innerHTML = `
+                ${renderPeriodMissingCopyBlock()}
+                <div class="daily-breakdown">${breakdownHtml}</div>
+            `;
+            document.getElementById('periodHint').innerText = `${startDate} 到 ${endDate} 共有 ${missing.length} 人未填表。`;
+        }
+
+        function buildPeriodMissingCopyText() {
+            if (!currentPeriodState) return '';
+            const { startDate, endDate, missing } = currentPeriodState;
+            const groupedMissing = groupRecordsByDate(missing);
+            const dates = Object.keys(groupedMissing).sort();
+            const sections = dates.map(date => {
+                const names = groupedMissing[date].map(item => item.id).join('\n');
+                return `${date}（${groupedMissing[date].length}人）\n${names}`;
+            });
+            return `${startDate} 到 ${endDate} 未填表名单（共 ${missing.length} 人）\n\n${sections.join('\n\n')}`;
+        }
+
+        function renderPeriodMissingCopyBlock() {
+            const { startDate, endDate, missing } = currentPeriodState;
+            const copyText = buildPeriodMissingCopyText();
+            return `
+                <div class="copy-panel">
+                    <div class="copy-panel-head">
+                        <div>
+                            <div class="copy-title">${startDate} 到 ${endDate} 周期未填表名单</div>
+                            <div class="text-sm text-gray">共 ${missing.length} 人，已按日期分组。</div>
+                        </div>
+                        <button onclick="copyPeriodMissingList()" class="btn btn-success">复制周期名单</button>
+                    </div>
+                    <textarea id="periodMissingCopyText" class="copy-textarea" readonly>${escapeHtml(copyText)}</textarea>
+                </div>
+            `;
+        }
+
+        async function copyPeriodMissingList() {
+            if (!currentPeriodState) generatePeriodReport();
+            if (!currentPeriodState) return;
+
+            if (currentPeriodState.missing.length === 0) {
+                alert("当前周期没有未填表人员可复制。");
+                return;
+            }
+
+            const copyBox = document.getElementById('periodMissingCopyText');
+            const text = copyBox ? copyBox.value : buildPeriodMissingCopyText();
+            try {
+                await navigator.clipboard.writeText(text);
+                alert(`已复制 ${currentPeriodState.missing.length} 个周期未填表人员。`);
+            } catch (error) {
+                const helper = document.createElement('textarea');
+                helper.value = text;
+                document.body.appendChild(helper);
+                helper.select();
+                document.execCommand('copy');
+                document.body.removeChild(helper);
+                alert(`已复制 ${currentPeriodState.missing.length} 个周期未填表人员。`);
+            }
+        }
+
+        function clearPeriodReport() {
+            document.getElementById('periodSummary').classList.add('hidden');
+            document.getElementById('periodResults').classList.add('hidden');
+            document.getElementById('periodResults').innerHTML = '';
+            currentPeriodState = null;
+            document.getElementById('periodHint').innerText = "例如 7月3号 到 7月9号，可以看这个周期整体填单率。";
+        }
+
+        // --- 核心功能 1：保存数据 ---
+        function saveData() {
+            const dateStr = document.getElementById('dateInput').value;
+            const textValue = document.getElementById('idListInput').value;
+
+            if (!dateStr) { alert("请选择日期！"); return; }
+            if (!textValue.trim()) { alert("名单不能为空，请先粘贴今天加微的人！"); return; }
+
+            const ids = textValue.split('\n').map(id => id.trim()).filter(id => id.length > 0);
+            let addedCount = 0;
+            let updatedCount = 0;
+
+            pushUndo(`保存 ${dateStr} +V 名单`);
+            ids.forEach(id => {
+                const existingIndex = db.findIndex(item => item.id === id);
+                if (existingIndex > -1) {
+                    if (db[existingIndex].date !== dateStr) {
+                        db[existingIndex].date = dateStr;
+                        updatedCount++;
+                    }
+                } else {
+                    db.unshift({ id: id, date: dateStr, precisionStatus: 'unknown', formFilled: false, timestamp: Date.now() });
+                    addedCount++;
+                }
+            });
+
+            saveDb();
+            document.getElementById('idListInput').value = '';
+            refreshViews();
+            alert(`保存成功！\n新增了 ${addedCount} 个ID，更新了 ${updatedCount} 个ID的日期。`);
+        }
+
+        // --- 核心功能 2：查询与核对 ---
+        function searchData() {
+            const rawSearchKw = document.getElementById('searchInput').value.trim();
+            const resultBox = document.getElementById('resultBox');
+
+            if (!rawSearchKw) {
+                resultBox.className = "hidden";
+                return;
+            }
+
+            resultBox.classList.remove('hidden');
+
+            const cleanStr = (str) => (str || '').replace(/\s+/g, '').toLowerCase();
+            const searchKw = cleanStr(rawSearchKw);
+
+            const exactMatch = db.find(item => cleanStr(item.id) === searchKw);
+            const partialMatches = db.filter(item => {
+                const itemId = cleanStr(item.id);
+                return itemId !== searchKw && (itemId.includes(searchKw) || searchKw.includes(itemId));
+            });
+            const partialKeys = new Set(partialMatches.map(item => cleanStr(item.id)));
+            const fuzzyMatches = findFormMatches(rawSearchKw)
+                .map(match => match.record)
+                .filter(item => cleanStr(item.id) !== searchKw && !partialKeys.has(cleanStr(item.id)));
+            const similarMatches = partialMatches.concat(fuzzyMatches);
+
+            if (exactMatch) {
+                resultBox.className = "result-box res-success";
+                let html = `
+                    <div class="res-title text-green">✅ 匹配成功！</div>
+                    <div style="font-size: 1.1rem; color: #111;">ID: <b>${exactMatch.id}</b></div>
+                    <div class="mt-2" style="line-height: 1.8;">
+                        <div>+V 日期: <span class="badge badge-green">${exactMatch.date}</span></div>
+                        <div>表单状态: ${exactMatch.formFilled ? '<span class="badge badge-green">已填</span>' : '<span class="badge badge-red">未填</span>'}</div>
+                        <div>是否精准: ${getPrecisionBadge(exactMatch.precisionStatus)}</div>
+                    </div>
+                    ${renderPrecisionSelect(exactMatch.id, exactMatch.precisionStatus, 'inline-select')}
+                    ${exactMatch.formFilled ? `<button class="btn btn-outline mt-3" onclick="updateFormFilledById('${encodeURIComponent(exactMatch.id)}', false)">撤销已填标记</button>` : `<button class="btn btn-success mt-3" onclick="markRecordFilledById('${encodeURIComponent(exactMatch.id)}')">标记为已填表</button>`}
+                `;
+                
+                if (similarMatches.length > 0) {
+                    let extraHtml = similarMatches.map(m => `<span class="similar-tag">${m.id} (${m.date})</span>`).join('');
+                    html += `<div class="mt-3 text-sm text-gray" style="border-top: 1px solid #a7f3d0; padding-top: 8px; text-align: left;">数据库中还有其他相似记录: <br>${extraHtml}</div>`;
+                }
+                resultBox.innerHTML = html;
+            } else if (similarMatches.length > 0) {
+                let partialListHtml = similarMatches.map(m => `
+                    <div class="similar-card">
+                        <div class="similar-card-title">${m.id}</div>
+                        <div class="similar-card-info">
+                            +V 日期: <span style="background: #d1fae5; color: #065f46; padding: 1px 4px; border-radius: 4px; font-weight: bold;">${m.date}</span>
+                            &nbsp;&nbsp;表单: ${m.formFilled ? '<span class="badge badge-green">已填</span>' : '<span class="badge badge-red">未填</span>'}
+                            &nbsp;&nbsp;是否精准: ${getPrecisionBadge(m.precisionStatus)}
+                        </div>
+                        ${renderPrecisionSelect(m.id, m.precisionStatus, 'inline-select')}
+                        ${m.formFilled ? `<button class="btn-sm bg-blue-light mt-2" onclick="updateFormFilledById('${encodeURIComponent(m.id)}', false)">撤销已填</button>` : `<button class="btn-sm bg-green-light mt-2" onclick="markRecordFilledById('${encodeURIComponent(m.id)}')">标记为已填表</button>`}
+                    </div>
+                `).join('');
+                
+                resultBox.className = "result-box res-warning";
+                resultBox.innerHTML = `
+                    <div class="res-title text-yellow">⚠️ 找到了相似记录</div>
+                    <div style="max-height: 200px; overflow-y: auto; padding: 4px;">
+                        ${partialListHtml}
+                    </div>
+                `;
+            } else {
+                resultBox.className = "result-box res-error";
+                resultBox.innerHTML = `
+                    <div class="res-title text-red">❌ 未找到记录</div>
+                    <p style="color: #4b5563;">数据库中没有查到关于 <b>"${rawSearchKw}"</b> 的信息。</p>
+                `;
+            }
+        }
+
+        // --- 辅助功能：渲染表格 ---
+        function renderTable() {
+            const tbody = document.getElementById('dataTableBody');
+            const emptyMsg = document.getElementById('emptyDataMsg');
+            
+            tbody.innerHTML = '';
+            
+            if (db.length === 0) {
+                emptyMsg.classList.remove('hidden');
+                return;
+            }
+            
+            emptyMsg.classList.add('hidden');
+            db.forEach((item) => {
+                const formStatus = item.formFilled
+                    ? `<span class="badge badge-green">已填</span> <button onclick="updateFormFilledById('${encodeURIComponent(item.id)}', false)" class="btn-sm bg-blue-light">撤销</button>`
+                    : `<span class="badge badge-red">未填</span> <button onclick="updateFormFilledById('${encodeURIComponent(item.id)}', true)" class="btn-sm bg-green-light">标记</button>`;
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="cell-id" title="${item.id}">${item.id}</td>
+                    <td>
+                        <input type="date" value="${item.date || ''}" onchange="updateVDate('${item.id.replace(/'/g, "\\'")}', this.value)" class="table-input">
+                    </td>
+                    <td>${renderPrecisionSelect(item.id, item.precisionStatus)}</td>
+                    <td>${formStatus}</td>
+                    <td style="text-align: right;">
+                        <button onclick="deleteItem('${item.id.replace(/'/g, "\\'")}')" class="btn-sm bg-red-light">删除</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // --- 辅助功能：更新与删除 ---
+        function updateVDate(id, value) {
+            const index = db.findIndex(item => item.id === id);
+            if (index > -1 && value && db[index].date !== value) {
+                pushUndo(`修改 +V 日期：${db[index].id}`);
+                db[index].date = value;
+                saveDb();
+                refreshViews();
+            }
+        }
+
+        function updatePrecisionById(encodedId, value) {
+            const id = decodeURIComponent(encodedId || '');
+            const index = db.findIndex(item => item.id === id);
+            const nextValue = getPrecisionValue(value);
+            if (index > -1 && getPrecisionValue(db[index].precisionStatus) !== nextValue) {
+                pushUndo(`修改是否精准：${db[index].id}`);
+                db[index].precisionStatus = nextValue;
+                saveDb();
+                refreshViews();
+                searchData();
+            }
+        }
+
+        function deleteItem(id) {
+            if(confirm(`确定要删除ID "${id}" 的记录吗？`)) {
+                pushUndo(`删除记录：${id}`);
+                db = db.filter(item => item.id !== id);
+                saveDb();
+                refreshViews();
+            }
+        }
+
+        function clearData() {
+            if(confirm("警告：这会清空本地所有保存的ID记录，确认要清空吗？")) {
+                pushUndo("清空本地数据库");
+                db = [];
+                saveDb();
+                refreshViews();
+            }
+        }
+
+        // --- 核心功能：导入导出 (CSV) ---
+        function exportData() {
+            if (db.length === 0) { alert("没有数据可导出！"); return; }
+            let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+            csvContent += "微信ID,+V日期,是否精准,表单状态\n";
+            db.forEach(item => {
+                let id = (item.id || "").replace(/,/g, "，");
+                let date = item.date || "";
+                let precision = getPrecisionLabel(item.precisionStatus);
+                let formStatus = item.formFilled ? "已填表" : "未填表";
+                csvContent += `${id},${date},${precision},${formStatus}\n`;
+            });
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `V_Tracker_Export_${today}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const lines = e.target.result.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                if (lines.length > 0 && lines[0].includes('微信ID')) lines.shift();
+                
+                let importedCount = 0, updatedCount = 0;
+                pushUndo(`导入 CSV：${file.name}`);
+                lines.forEach(line => {
+                    const parts = line.replace(/\r/g, '').split(',');
+                    if (parts.length >= 2) {
+                        const wxId = parts[0].trim(), vDate = parts[1].trim();
+                        const thirdValue = parts.length > 2 ? parts[2].trim() : '';
+                        const thirdIsPrecision = ['精准', '确定精准', '不确定', '不精准', 'accurate', 'unknown', 'inaccurate'].includes(thirdValue.toLowerCase()) || ['精准', '确定精准', '不确定', '不精准'].includes(thirdValue);
+                        const precisionStatus = thirdIsPrecision ? parsePrecisionStatus(thirdValue) : 'unknown';
+                        const formStatus = thirdIsPrecision ? (parts.length > 3 ? parts[3].trim() : '') : (parts.length > 3 ? parts[3].trim() : '');
+                        const formFilled = formStatus.includes('已填');
+                        if (wxId) {
+                            const idx = db.findIndex(item => item.id === wxId);
+                            if (idx > -1) {
+                                let changed = false;
+                                if(db[idx].date !== vDate) { db[idx].date = vDate; changed = true; }
+                                if(thirdIsPrecision && getPrecisionValue(db[idx].precisionStatus) !== precisionStatus) { db[idx].precisionStatus = precisionStatus; changed = true; }
+                                if(parts.length > 3 && db[idx].formFilled !== formFilled) { db[idx].formFilled = formFilled; changed = true; }
+                                if(changed) updatedCount++;
+                            } else {
+                                db.push({ id: wxId, date: vDate, precisionStatus, formFilled, timestamp: Date.now() });
+                                importedCount++;
+                            }
+                        }
+                    }
+                });
+                db.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                saveDb();
+                refreshViews();
+                alert(`导入完成！\n新增了 ${importedCount} 条记录，更新了 ${updatedCount} 条记录。`);
+                event.target.value = '';
+            };
+            reader.readAsText(file, 'UTF-8');
+        }
+    </script>
+</body>
+</html>
