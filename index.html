@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>+V 表单核对小工具</title>
+    <title>+V 表单或电话核对小工具</title>
     <style>
         /* =========================================
            100% 纯本地原生 CSS，彻底告别外部依赖拦截！
@@ -155,8 +155,8 @@
     <div class="container">
         <!-- 页面头部 -->
         <header>
-            <h1>+V 表单核对小工具</h1>
-            <p class="subtitle">录入每日 +V 名单，核对表单填写状态，生成可复制的催填名单。</p>
+            <h1>+V 表单或电话核对小工具</h1>
+            <p class="subtitle">录入每日 +V 名单，核对表单或电话预约状态，生成可复制的跟进名单。</p>
         </header>
 
         <!-- 云同步区域 -->
@@ -227,12 +227,12 @@
                 <div class="card">
                     <div class="card-title">
                         <div class="title-left">
-                            <span class="step-icon green">2</span> 核对表单人员
+                            <span class="step-icon green">2</span> 核对表单或电话人员
                         </div>
                     </div>
                     
                     <div class="form-group" style="margin-bottom: 0;">
-                        <label>输入表单填写的ID名</label>
+                        <label>输入已约表单或电话的ID名</label>
                         <div class="flex-row">
                             <input type="text" id="searchInput" oninput="searchData()" onkeyup="if(event.key === 'Enter') searchData()" placeholder="输入ID如: 张三" style="font-size: 1.1rem; padding: 0.8rem;">
                             <button onclick="searchData()" class="btn btn-success" style="padding: 0.8rem 1.5rem;">查询</button>
@@ -263,7 +263,7 @@
                                     <th>ID 名称</th>
                                     <th>+V 日期</th>
                                     <th>是否精准</th>
-                                    <th>表单</th>
+                                    <th>表单或电话</th>
                                     <th style="text-align: right;">操作</th>
                                 </tr>
                             </thead>
@@ -280,24 +280,24 @@
             </div>
         </div>
 
-        <!-- 表单状态处理区域 -->
+        <!-- 表单或电话状态处理区域 -->
         <div class="section-stack">
             <div class="card">
                 <div class="card-title">
                     <div class="title-left">
-                        <span class="step-icon">3</span> 表单状态处理
+                        <span class="step-icon">3</span> 表单或电话状态处理
                     </div>
-                    <span class="text-xs text-gray">先标记已填，再生成未填名单</span>
+                    <span class="text-xs text-gray">先标记已约，再生成未约名单和精准名单</span>
                 </div>
 
                 <div class="form-group">
-                    <label>已填表人员ID (每行一个)</label>
-                    <textarea id="formFilledInput" class="textarea-compact" placeholder="粘贴已经填写表单的人。系统会在整个本地数据库里模糊搜索，匹配到后标记为“已填”。"></textarea>
+                    <label>已约表单或电话人员ID (每行一个)</label>
+                    <textarea id="formFilledInput" class="textarea-compact" placeholder="粘贴已经预约表单或电话的人。系统会在整个本地数据库里模糊搜索，匹配到后标记为“已约”。"></textarea>
                 </div>
 
                 <div class="check-actions">
                     <div class="action-bar">
-                        <button onclick="markFilledFromInput()" class="btn btn-success">标记为已填表</button>
+                        <button onclick="markFilledFromInput()" class="btn btn-success">标记为已约</button>
                         <button onclick="clearFilledInput()" class="btn btn-outline">清空输入</button>
                     </div>
                     <span class="text-sm text-gray">匹配不确定时会列出候选，不会乱标。</span>
@@ -306,19 +306,20 @@
                 <div id="markResults" class="hidden mt-3"></div>
 
                 <div class="form-group mt-3">
-                    <label>筛选未填表日期</label>
+                    <label>筛选日期</label>
                     <div class="flex-row">
                         <input type="date" id="checkDateInput">
-                        <button onclick="generateMissingList()" class="btn btn-primary" style="flex-shrink: 0;">生成未填名单</button>
+                        <button onclick="generateMissingList()" class="btn btn-primary" style="flex-shrink: 0;">生成名单</button>
                     </div>
                 </div>
 
                 <div class="check-actions">
                     <div class="action-bar">
-                        <button onclick="copyMissingList()" class="btn btn-outline">复制未填名单</button>
+                        <button onclick="copyMissingList()" class="btn btn-outline">复制未约名单</button>
+                        <button onclick="copyAccurateList()" class="btn btn-outline">复制精准名单</button>
                         <button onclick="clearMissingResults()" class="btn btn-outline">清空结果</button>
                     </div>
-                    <span id="checkHint" class="text-sm text-gray">未标记“已填”的人，会被算作未填表。</span>
+                    <span id="checkHint" class="text-sm text-gray">未标记“已约”的人，会被算作未约。</span>
                 </div>
 
                 <div id="checkSummary" class="stats-row hidden"></div>
@@ -331,9 +332,9 @@
             <div class="card">
                 <div class="card-title">
                     <div class="title-left">
-                        <span class="step-icon green">4</span> 周期表单统计
+                        <span class="step-icon green">4</span> 周期表单或电话统计
                     </div>
-                    <span class="text-xs text-gray">按日期区间汇总未填人员和填单率</span>
+                    <span class="text-xs text-gray">按日期区间汇总未约人员、约成率和精准名单</span>
                 </div>
 
                 <div class="period-controls">
@@ -350,10 +351,11 @@
 
                 <div class="check-actions">
                     <div class="action-bar">
-                        <button onclick="copyPeriodMissingList()" class="btn btn-outline">复制周期未填名单</button>
+                        <button onclick="copyPeriodMissingList()" class="btn btn-outline">复制周期未约名单</button>
+                        <button onclick="copyPeriodAccurateList()" class="btn btn-outline">复制周期精准名单</button>
                         <button onclick="clearPeriodReport()" class="btn btn-outline">清空周期结果</button>
                     </div>
-                    <span id="periodHint" class="text-sm text-gray">例如 7月3号 到 7月9号，可以看这个周期整体填单率。</span>
+                    <span id="periodHint" class="text-sm text-gray">例如 7月3号 到 7月9号，可以看这个周期整体约成率和精准率。</span>
                 </div>
 
                 <div id="periodSummary" class="stats-row hidden"></div>
@@ -387,7 +389,7 @@
             updateUndoStatus();
         };
 
-        // --- 表单状态处理 ---
+        // --- 表单或电话状态处理 ---
         function cloneDb() {
             return JSON.parse(JSON.stringify(db));
         }
@@ -799,11 +801,11 @@
             const resultBox = document.getElementById('markResults');
 
             if (entries.length === 0) {
-                alert("请先粘贴已经填写表单的人。");
+                alert("请先粘贴已经预约表单或电话的人。");
                 return;
             }
 
-            pushUndo(`批量标记已填表 (${entries.length} 人)`);
+            pushUndo(`批量标记已约 (${entries.length} 人)`);
             let markedCount = 0;
             const marked = [];
             const uncertain = [];
@@ -835,13 +837,13 @@
             resultBox.classList.remove('hidden');
             resultBox.innerHTML = renderMarkResults(marked, uncertain, notFound);
 
-            document.getElementById('checkHint').innerText = `已自动标记 ${markedCount} 人。未确定的人请在候选里手动点选。`;
+            document.getElementById('checkHint').innerText = `已自动标记 ${markedCount} 人为已约。未确定的人请在候选里手动点选。`;
         }
 
         function renderMarkResults(marked, uncertain, notFound) {
             const markedHtml = marked.length > 0 ? `
                 <div class="result-box res-success" style="text-align: left;">
-                    <div class="res-title text-green">已标记 ${marked.length} 人为已填表</div>
+                    <div class="res-title text-green">已标记 ${marked.length} 人为已约</div>
                     <div>${marked.map(item => `<span class="similar-tag">${escapeHtml(item.input)} → ${escapeHtml(getRecordLabel(item.record))}</span>`).join('')}</div>
                 </div>
             ` : '';
@@ -881,7 +883,7 @@
             if (markRecordFilled(index, decodedInput)) {
                 saveDb();
                 refreshViews();
-                alert(`已标记：${db[index].id} 已填表`);
+                alert(`已标记：${db[index].id} 已约`);
             }
         }
 
@@ -899,12 +901,12 @@
                 return;
             }
 
-            pushUndo(`标记已填表：${db[index].id}`);
+            pushUndo(`标记已约：${db[index].id}`);
             markRecordFilled(index, id);
             saveDb();
             refreshViews();
             searchData();
-            alert(`已标记：${db[index].id} 已填表`);
+            alert(`已标记：${db[index].id} 已约`);
         }
 
         function updateFormFilledById(encodedId, filled) {
@@ -916,7 +918,7 @@
             }
             if (!!db[index].formFilled === !!filled) return;
 
-            pushUndo(`${filled ? '标记已填表' : '撤销已填标记'}：${db[index].id}`);
+            pushUndo(`${filled ? '标记已约' : '撤销已约标记'}：${db[index].id}`);
             db[index].formFilled = !!filled;
             if (filled) {
                 db[index].formFilledAt = new Date().toISOString();
@@ -968,21 +970,22 @@
 
             summary.innerHTML = `
                 <div class="stat-tile"><span class="stat-value">${dayRecords.length}</span><span class="stat-label">当天加微</span></div>
-                <div class="stat-tile"><span class="stat-value">${filled.length}</span><span class="stat-label">已填表</span></div>
-                <div class="stat-tile"><span class="stat-value">${missing.length}</span><span class="stat-label">未填表</span></div>
-                <div class="stat-tile"><span class="stat-value">${dayRecords.length ? Math.round((filled.length / dayRecords.length) * 100) : 0}%</span><span class="stat-label">填表率</span></div>
+                <div class="stat-tile"><span class="stat-value">${filled.length}</span><span class="stat-label">已约</span></div>
+                <div class="stat-tile"><span class="stat-value">${missing.length}</span><span class="stat-label">未约</span></div>
+                <div class="stat-tile"><span class="stat-value">${dayRecords.length ? Math.round((filled.length / dayRecords.length) * 100) : 0}%</span><span class="stat-label">约成率</span></div>
                 <div class="stat-tile"><span class="stat-value">${accurate.length}</span><span class="stat-label">精准人数</span></div>
                 <div class="stat-tile"><span class="stat-value">${dayRecords.length ? Math.round((accurate.length / dayRecords.length) * 100) : 0}%</span><span class="stat-label">精准率</span></div>
             `;
 
             if (missing.length === 0) {
                 resultWrap.innerHTML = `
+                    ${renderAccurateCopyBlock(date, accurate)}
                     <div class="empty-panel">
                         <div class="res-title text-green">全部匹配完成</div>
-                        <div class="text-sm">${date} 的 +V 人员都已经标记为已填表。</div>
+                        <div class="text-sm">${date} 的 +V 人员都已经标记为已约。</div>
                     </div>
                 `;
-                document.getElementById('checkHint').innerText = "核对完成，没有未填表人员。";
+                document.getElementById('checkHint').innerText = `核对完成，没有未约人员。精准人员 ${accurate.length} 人。`;
                 return;
             }
 
@@ -990,17 +993,18 @@
                     <tr>
                         <td class="person-name" title="${escapeHtml(item.id)}">${escapeHtml(item.id)}</td>
                         <td>${getPrecisionBadge(item.precisionStatus)}</td>
-                        <td class="text-right"><span class="badge badge-red">未填</span></td>
+                        <td class="text-right"><span class="badge badge-red">未约</span></td>
                     </tr>
                 `).join('');
 
             resultWrap.innerHTML = `
                 ${renderMissingCopyBlock(date, missing)}
+                ${renderAccurateCopyBlock(date, accurate)}
                 <div class="table-wrap tall">
                     <table>
                         <thead>
                             <tr>
-                                <th>未填表人员</th>
+                                <th>未约人员</th>
                                 <th>是否精准</th>
                                 <th class="text-right">状态</th>
                             </tr>
@@ -1009,15 +1013,15 @@
                     </table>
                 </div>
                 <div class="mt-2 text-sm text-gray">
-                    ${date} 加微 ${dayRecords.length} 人；已填表 ${filled.length} 人；未填表 ${missing.length} 人。
+                    ${date} 加微 ${dayRecords.length} 人；已约 ${filled.length} 人；未约 ${missing.length} 人；精准 ${accurate.length} 人。
                 </div>
             `;
-            document.getElementById('checkHint').innerText = `${date} 还有 ${missing.length} 人未填表。`;
+            document.getElementById('checkHint').innerText = `${date} 还有 ${missing.length} 人未约，精准 ${accurate.length} 人。`;
         }
 
         function buildMissingCopyText(dateStr, missingList) {
             const names = missingList.map(item => item.id);
-            return `${dateStr} 未填表名单（共 ${names.length} 人）\n${names.join('\n')}`;
+            return `${dateStr} 未约名单（共 ${names.length} 人）\n${names.join('\n')}`;
         }
 
         function renderMissingCopyBlock(dateStr, missingList) {
@@ -1026,12 +1030,33 @@
                 <div class="copy-panel">
                     <div class="copy-panel-head">
                         <div>
-                            <div class="copy-title">${dateStr} 未填表名单</div>
-                            <div class="text-sm text-gray">共 ${missingList.length} 人，可以直接复制去催填。</div>
+                            <div class="copy-title">${dateStr} 未约名单</div>
+                            <div class="text-sm text-gray">共 ${missingList.length} 人，可以直接复制去跟进。</div>
                         </div>
                         <button onclick="copyMissingList()" class="btn btn-success">复制这份名单</button>
                     </div>
                     <textarea id="missingCopyText" class="copy-textarea" readonly>${escapeHtml(copyText)}</textarea>
+                </div>
+            `;
+        }
+
+        function buildAccurateCopyText(dateStr, accurateList) {
+            const names = accurateList.map(item => item.id);
+            return `${dateStr} 精准名单（共 ${names.length} 人）\n${names.join('\n')}`;
+        }
+
+        function renderAccurateCopyBlock(dateStr, accurateList) {
+            const copyText = buildAccurateCopyText(dateStr, accurateList);
+            return `
+                <div class="copy-panel">
+                    <div class="copy-panel-head">
+                        <div>
+                            <div class="copy-title">${dateStr} 精准名单</div>
+                            <div class="text-sm text-gray">共 ${accurateList.length} 人，可以直接复制查看。</div>
+                        </div>
+                        <button onclick="copyAccurateList()" class="btn btn-success">复制精准名单</button>
+                    </div>
+                    <textarea id="accurateCopyText" class="copy-textarea" readonly>${escapeHtml(copyText)}</textarea>
                 </div>
             `;
         }
@@ -1043,7 +1068,7 @@
             const missing = currentMissingState.missing.map(item => item.id);
 
             if (missing.length === 0) {
-                alert("当前没有未填表人员可复制。");
+                alert("当前没有未约人员可复制。");
                 return;
             }
 
@@ -1051,7 +1076,7 @@
             const text = copyBox ? copyBox.value : buildMissingCopyText(currentMissingState.date, currentMissingState.missing);
             try {
                 await navigator.clipboard.writeText(text);
-                alert(`已复制 ${missing.length} 个未填表人员。`);
+                alert(`已复制 ${missing.length} 个未约人员。`);
             } catch (error) {
                 const helper = document.createElement('textarea');
                 helper.value = text;
@@ -1059,7 +1084,34 @@
                 helper.select();
                 document.execCommand('copy');
                 document.body.removeChild(helper);
-                alert(`已复制 ${missing.length} 个未填表人员。`);
+                alert(`已复制 ${missing.length} 个未约人员。`);
+            }
+        }
+
+        async function copyAccurateList() {
+            if (!currentMissingState) generateMissingList();
+            if (!currentMissingState) return;
+
+            const accurate = currentMissingState.accurate.map(item => item.id);
+
+            if (accurate.length === 0) {
+                alert("当前没有精准人员可复制。");
+                return;
+            }
+
+            const copyBox = document.getElementById('accurateCopyText');
+            const text = copyBox ? copyBox.value : buildAccurateCopyText(currentMissingState.date, currentMissingState.accurate);
+            try {
+                await navigator.clipboard.writeText(text);
+                alert(`已复制 ${accurate.length} 个精准人员。`);
+            } catch (error) {
+                const helper = document.createElement('textarea');
+                helper.value = text;
+                document.body.appendChild(helper);
+                helper.select();
+                document.execCommand('copy');
+                document.body.removeChild(helper);
+                alert(`已复制 ${accurate.length} 个精准人员。`);
             }
         }
 
@@ -1068,7 +1120,7 @@
             document.getElementById('checkResults').classList.add('hidden');
             document.getElementById('checkResults').innerHTML = '';
             currentMissingState = null;
-            document.getElementById('checkHint').innerText = "未标记“已填”的人，会被算作未填表。";
+            document.getElementById('checkHint').innerText = "未标记“已约”的人，会被算作未约。";
         }
 
         function getRecordsInRange(startDate, endDate) {
@@ -1131,9 +1183,9 @@
 
             summary.innerHTML = `
                 <div class="stat-tile"><span class="stat-value">${records.length}</span><span class="stat-label">周期加微</span></div>
-                <div class="stat-tile"><span class="stat-value">${filled.length}</span><span class="stat-label">已填表</span></div>
-                <div class="stat-tile"><span class="stat-value">${missing.length}</span><span class="stat-label">未填表</span></div>
-                <div class="stat-tile"><span class="stat-value">${rate}%</span><span class="stat-label">周期填单率</span></div>
+                <div class="stat-tile"><span class="stat-value">${filled.length}</span><span class="stat-label">已约</span></div>
+                <div class="stat-tile"><span class="stat-value">${missing.length}</span><span class="stat-label">未约</span></div>
+                <div class="stat-tile"><span class="stat-value">${rate}%</span><span class="stat-label">周期约成率</span></div>
                 <div class="stat-tile"><span class="stat-value">${accurate.length}</span><span class="stat-label">精准人数</span></div>
                 <div class="stat-tile"><span class="stat-value">${precisionRate}%</span><span class="stat-label">周期精准率</span></div>
             `;
@@ -1149,30 +1201,32 @@
                     <div class="breakdown-item">
                         <div>
                             <div class="breakdown-date">${date}</div>
-                            <div class="breakdown-meta">加微 ${list.length} 人 · 已填 ${dayFilled} 人 · 未填 ${dayMissing} 人 · 精准 ${dayAccurate} 人</div>
+                            <div class="breakdown-meta">加微 ${list.length} 人 · 已约 ${dayFilled} 人 · 未约 ${dayMissing} 人 · 精准 ${dayAccurate} 人</div>
                         </div>
-                        <span class="badge ${dayMissing === 0 ? 'badge-green' : 'badge-yellow'}">填${dayRate}% / 精${dayPrecisionRate}%</span>
+                        <span class="badge ${dayMissing === 0 ? 'badge-green' : 'badge-yellow'}">约${dayRate}% / 精${dayPrecisionRate}%</span>
                     </div>
                 `;
             }).join('');
 
             if (missing.length === 0) {
                 resultWrap.innerHTML = `
+                    ${renderPeriodAccurateCopyBlock()}
                     <div class="empty-panel">
-                        <div class="res-title text-green">这个周期全部已填表</div>
-                        <div class="text-sm">${startDate} 到 ${endDate} 的 +V 人员都已经标记为已填表。</div>
+                        <div class="res-title text-green">这个周期全部已约</div>
+                        <div class="text-sm">${startDate} 到 ${endDate} 的 +V 人员都已经标记为已约。</div>
                     </div>
                     <div class="daily-breakdown">${breakdownHtml}</div>
                 `;
-                document.getElementById('periodHint').innerText = `${startDate} 到 ${endDate} 没有未填表人员。`;
+                document.getElementById('periodHint').innerText = `${startDate} 到 ${endDate} 没有未约人员，精准 ${accurate.length} 人。`;
                 return;
             }
 
             resultWrap.innerHTML = `
                 ${renderPeriodMissingCopyBlock()}
+                ${renderPeriodAccurateCopyBlock()}
                 <div class="daily-breakdown">${breakdownHtml}</div>
             `;
-            document.getElementById('periodHint').innerText = `${startDate} 到 ${endDate} 共有 ${missing.length} 人未填表。`;
+            document.getElementById('periodHint').innerText = `${startDate} 到 ${endDate} 共有 ${missing.length} 人未约，精准 ${accurate.length} 人。`;
         }
 
         function buildPeriodMissingCopyText() {
@@ -1184,7 +1238,7 @@
                 const names = groupedMissing[date].map(item => item.id).join('\n');
                 return `${date}（${groupedMissing[date].length}人）\n${names}`;
             });
-            return `${startDate} 到 ${endDate} 未填表名单（共 ${missing.length} 人）\n\n${sections.join('\n\n')}`;
+            return `${startDate} 到 ${endDate} 未约名单（共 ${missing.length} 人）\n\n${sections.join('\n\n')}`;
         }
 
         function renderPeriodMissingCopyBlock() {
@@ -1194,12 +1248,41 @@
                 <div class="copy-panel">
                     <div class="copy-panel-head">
                         <div>
-                            <div class="copy-title">${startDate} 到 ${endDate} 周期未填表名单</div>
+                            <div class="copy-title">${startDate} 到 ${endDate} 周期未约名单</div>
                             <div class="text-sm text-gray">共 ${missing.length} 人，已按日期分组。</div>
                         </div>
-                        <button onclick="copyPeriodMissingList()" class="btn btn-success">复制周期名单</button>
+                        <button onclick="copyPeriodMissingList()" class="btn btn-success">复制未约名单</button>
                     </div>
                     <textarea id="periodMissingCopyText" class="copy-textarea" readonly>${escapeHtml(copyText)}</textarea>
+                </div>
+            `;
+        }
+
+        function buildPeriodAccurateCopyText() {
+            if (!currentPeriodState) return '';
+            const { startDate, endDate, accurate } = currentPeriodState;
+            const groupedAccurate = groupRecordsByDate(accurate);
+            const dates = Object.keys(groupedAccurate).sort();
+            const sections = dates.map(date => {
+                const names = groupedAccurate[date].map(item => item.id).join('\n');
+                return `${date}（${groupedAccurate[date].length}人）\n${names}`;
+            });
+            return `${startDate} 到 ${endDate} 精准名单（共 ${accurate.length} 人）\n\n${sections.join('\n\n')}`;
+        }
+
+        function renderPeriodAccurateCopyBlock() {
+            const { startDate, endDate, accurate } = currentPeriodState;
+            const copyText = buildPeriodAccurateCopyText();
+            return `
+                <div class="copy-panel">
+                    <div class="copy-panel-head">
+                        <div>
+                            <div class="copy-title">${startDate} 到 ${endDate} 周期精准名单</div>
+                            <div class="text-sm text-gray">共 ${accurate.length} 人，已按日期分组。</div>
+                        </div>
+                        <button onclick="copyPeriodAccurateList()" class="btn btn-success">复制精准名单</button>
+                    </div>
+                    <textarea id="periodAccurateCopyText" class="copy-textarea" readonly>${escapeHtml(copyText)}</textarea>
                 </div>
             `;
         }
@@ -1209,7 +1292,7 @@
             if (!currentPeriodState) return;
 
             if (currentPeriodState.missing.length === 0) {
-                alert("当前周期没有未填表人员可复制。");
+                alert("当前周期没有未约人员可复制。");
                 return;
             }
 
@@ -1217,7 +1300,7 @@
             const text = copyBox ? copyBox.value : buildPeriodMissingCopyText();
             try {
                 await navigator.clipboard.writeText(text);
-                alert(`已复制 ${currentPeriodState.missing.length} 个周期未填表人员。`);
+                alert(`已复制 ${currentPeriodState.missing.length} 个周期未约人员。`);
             } catch (error) {
                 const helper = document.createElement('textarea');
                 helper.value = text;
@@ -1225,7 +1308,32 @@
                 helper.select();
                 document.execCommand('copy');
                 document.body.removeChild(helper);
-                alert(`已复制 ${currentPeriodState.missing.length} 个周期未填表人员。`);
+                alert(`已复制 ${currentPeriodState.missing.length} 个周期未约人员。`);
+            }
+        }
+
+        async function copyPeriodAccurateList() {
+            if (!currentPeriodState) generatePeriodReport();
+            if (!currentPeriodState) return;
+
+            if (currentPeriodState.accurate.length === 0) {
+                alert("当前周期没有精准人员可复制。");
+                return;
+            }
+
+            const copyBox = document.getElementById('periodAccurateCopyText');
+            const text = copyBox ? copyBox.value : buildPeriodAccurateCopyText();
+            try {
+                await navigator.clipboard.writeText(text);
+                alert(`已复制 ${currentPeriodState.accurate.length} 个周期精准人员。`);
+            } catch (error) {
+                const helper = document.createElement('textarea');
+                helper.value = text;
+                document.body.appendChild(helper);
+                helper.select();
+                document.execCommand('copy');
+                document.body.removeChild(helper);
+                alert(`已复制 ${currentPeriodState.accurate.length} 个周期精准人员。`);
             }
         }
 
@@ -1234,7 +1342,7 @@
             document.getElementById('periodResults').classList.add('hidden');
             document.getElementById('periodResults').innerHTML = '';
             currentPeriodState = null;
-            document.getElementById('periodHint').innerText = "例如 7月3号 到 7月9号，可以看这个周期整体填单率。";
+            document.getElementById('periodHint').innerText = "例如 7月3号 到 7月9号，可以看这个周期整体约成率和精准率。";
         }
 
         // --- 核心功能 1：保存数据 ---
@@ -1302,11 +1410,11 @@
                     <div style="font-size: 1.1rem; color: #111;">ID: <b>${exactMatch.id}</b></div>
                     <div class="mt-2" style="line-height: 1.8;">
                         <div>+V 日期: <span class="badge badge-green">${exactMatch.date}</span></div>
-                        <div>表单状态: ${exactMatch.formFilled ? '<span class="badge badge-green">已填</span>' : '<span class="badge badge-red">未填</span>'}</div>
+                        <div>表单或电话状态: ${exactMatch.formFilled ? '<span class="badge badge-green">已约</span>' : '<span class="badge badge-red">未约</span>'}</div>
                         <div>是否精准: ${getPrecisionBadge(exactMatch.precisionStatus)}</div>
                     </div>
                     ${renderPrecisionSelect(exactMatch.id, exactMatch.precisionStatus, 'inline-select')}
-                    ${exactMatch.formFilled ? `<button class="btn btn-outline mt-3" onclick="updateFormFilledById('${encodeURIComponent(exactMatch.id)}', false)">撤销已填标记</button>` : `<button class="btn btn-success mt-3" onclick="markRecordFilledById('${encodeURIComponent(exactMatch.id)}')">标记为已填表</button>`}
+                    ${exactMatch.formFilled ? `<button class="btn btn-outline mt-3" onclick="updateFormFilledById('${encodeURIComponent(exactMatch.id)}', false)">撤销已约标记</button>` : `<button class="btn btn-success mt-3" onclick="markRecordFilledById('${encodeURIComponent(exactMatch.id)}')">标记为已约</button>`}
                 `;
                 
                 if (similarMatches.length > 0) {
@@ -1320,11 +1428,11 @@
                         <div class="similar-card-title">${m.id}</div>
                         <div class="similar-card-info">
                             +V 日期: <span style="background: #d1fae5; color: #065f46; padding: 1px 4px; border-radius: 4px; font-weight: bold;">${m.date}</span>
-                            &nbsp;&nbsp;表单: ${m.formFilled ? '<span class="badge badge-green">已填</span>' : '<span class="badge badge-red">未填</span>'}
+                            &nbsp;&nbsp;表单或电话: ${m.formFilled ? '<span class="badge badge-green">已约</span>' : '<span class="badge badge-red">未约</span>'}
                             &nbsp;&nbsp;是否精准: ${getPrecisionBadge(m.precisionStatus)}
                         </div>
                         ${renderPrecisionSelect(m.id, m.precisionStatus, 'inline-select')}
-                        ${m.formFilled ? `<button class="btn-sm bg-blue-light mt-2" onclick="updateFormFilledById('${encodeURIComponent(m.id)}', false)">撤销已填</button>` : `<button class="btn-sm bg-green-light mt-2" onclick="markRecordFilledById('${encodeURIComponent(m.id)}')">标记为已填表</button>`}
+                        ${m.formFilled ? `<button class="btn-sm bg-blue-light mt-2" onclick="updateFormFilledById('${encodeURIComponent(m.id)}', false)">撤销已约</button>` : `<button class="btn-sm bg-green-light mt-2" onclick="markRecordFilledById('${encodeURIComponent(m.id)}')">标记为已约</button>`}
                     </div>
                 `).join('');
                 
@@ -1359,8 +1467,8 @@
             emptyMsg.classList.add('hidden');
             db.forEach((item) => {
                 const formStatus = item.formFilled
-                    ? `<span class="badge badge-green">已填</span> <button onclick="updateFormFilledById('${encodeURIComponent(item.id)}', false)" class="btn-sm bg-blue-light">撤销</button>`
-                    : `<span class="badge badge-red">未填</span> <button onclick="updateFormFilledById('${encodeURIComponent(item.id)}', true)" class="btn-sm bg-green-light">标记</button>`;
+                    ? `<span class="badge badge-green">已约</span> <button onclick="updateFormFilledById('${encodeURIComponent(item.id)}', false)" class="btn-sm bg-blue-light">撤销</button>`
+                    : `<span class="badge badge-red">未约</span> <button onclick="updateFormFilledById('${encodeURIComponent(item.id)}', true)" class="btn-sm bg-green-light">标记</button>`;
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td class="cell-id" title="${item.id}">${item.id}</td>
@@ -1423,12 +1531,12 @@
         function exportData() {
             if (db.length === 0) { alert("没有数据可导出！"); return; }
             let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-            csvContent += "微信ID,+V日期,是否精准,表单状态\n";
+            csvContent += "微信ID,+V日期,是否精准,表单或电话状态\n";
             db.forEach(item => {
                 let id = (item.id || "").replace(/,/g, "，");
                 let date = item.date || "";
                 let precision = getPrecisionLabel(item.precisionStatus);
-                let formStatus = item.formFilled ? "已填表" : "未填表";
+                let formStatus = item.formFilled ? "已约" : "未约";
                 csvContent += `${id},${date},${precision},${formStatus}\n`;
             });
             const encodedUri = encodeURI(csvContent);
@@ -1458,7 +1566,7 @@
                         const thirdIsPrecision = ['精准', '确定精准', '不确定', '不精准', 'accurate', 'unknown', 'inaccurate'].includes(thirdValue.toLowerCase()) || ['精准', '确定精准', '不确定', '不精准'].includes(thirdValue);
                         const precisionStatus = thirdIsPrecision ? parsePrecisionStatus(thirdValue) : 'unknown';
                         const formStatus = thirdIsPrecision ? (parts.length > 3 ? parts[3].trim() : '') : (parts.length > 3 ? parts[3].trim() : '');
-                        const formFilled = formStatus.includes('已填');
+                        const formFilled = formStatus.includes('已约') || formStatus.includes('已填');
                         if (wxId) {
                             const idx = db.findIndex(item => item.id === wxId);
                             if (idx > -1) {
