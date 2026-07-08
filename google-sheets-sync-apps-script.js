@@ -63,7 +63,7 @@ function readRows() {
       id: String(item.id || ''),
       date: formatDateValue(item.date),
       precisionStatus: normalizePrecision(item.precisionStatus),
-      formFilled: item.formFilled === true || String(item.formFilled).toLowerCase() === 'true' || String(item.formFilled).includes('已填'),
+      formFilled: item.formFilled === true || String(item.formFilled).toLowerCase() === 'true' || String(item.formFilled).includes('已填') || String(item.formFilled).includes('已约'),
       timestamp: Number(item.timestamp || Date.now()),
       formFilledAt: String(item.formFilledAt || ''),
       formMatchedFrom: String(item.formMatchedFrom || '')
