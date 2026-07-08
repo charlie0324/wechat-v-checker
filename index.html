@@ -199,6 +199,7 @@
                 </label>
             </div>
             <div id="cloudSyncStatus" class="sync-status text-sm mt-2">未配置云同步。</div>
+            <div id="cloudSyncTimeStatus" class="sync-status text-sm mt-1">最新上传：暂无；最新双向同步：暂无。</div>
         </div>
 
         <div class="grid">
@@ -398,6 +399,7 @@
         let currentPeriodState = null;
         let undoStack = JSON.parse(localStorage.getItem('wechat_tracker_undo_stack')) || [];
         let cloudConfig = JSON.parse(localStorage.getItem('wechat_tracker_cloud_config')) || { url: '', secret: '', autoSync: false, periodicSync: false };
+        let cloudSyncMeta = JSON.parse(localStorage.getItem('wechat_tracker_cloud_sync_meta')) || { lastUploadAt: '', lastBidirectionalSyncAt: '' };
         let cloudPushTimer = null;
         let cloudPeriodicTimer = null;
         let isCloudSyncing = false;
@@ -408,6 +410,7 @@
             loadCloudSettingsToForm();
             loadDbDateFilterToForm();
             renderTable();
+            renderCloudSyncTimes();
             updateUndoStatus();
             setupPeriodicCloudSync();
         };
@@ -640,6 +643,33 @@
             el.className = `sync-status text-sm mt-2 ${type === 'error' ? 'text-red' : type === 'success' ? 'text-green' : 'text-gray'}`;
         }
 
+        function formatSyncTime(value) {
+            if (!value) return '暂无';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return '暂无';
+            const todayText = new Date().toLocaleDateString('zh-CN');
+            const dateText = date.toLocaleDateString('zh-CN');
+            const timeText = date.toLocaleTimeString('zh-CN', { hour12: false });
+            return dateText === todayText ? timeText : `${dateText} ${timeText}`;
+        }
+
+        function renderCloudSyncTimes() {
+            const el = document.getElementById('cloudSyncTimeStatus');
+            if (!el) return;
+            el.innerText = `最新上传：${formatSyncTime(cloudSyncMeta.lastUploadAt)}；最新双向同步：${formatSyncTime(cloudSyncMeta.lastBidirectionalSyncAt)}。`;
+        }
+
+        function recordCloudSyncTime(type) {
+            const now = new Date().toISOString();
+            if (type === 'upload') cloudSyncMeta.lastUploadAt = now;
+            if (type === 'bidirectional') {
+                cloudSyncMeta.lastBidirectionalSyncAt = now;
+                cloudSyncMeta.lastUploadAt = now;
+            }
+            localStorage.setItem('wechat_tracker_cloud_sync_meta', JSON.stringify(cloudSyncMeta));
+            renderCloudSyncTimes();
+        }
+
         function requireCloudConfig(showAlert = true) {
             saveCloudSettings(false);
             if (!cloudConfig.url || !cloudConfig.secret) {
@@ -742,6 +772,7 @@
 
             try {
                 const result = await uploadCloudPayload(payload);
+                recordCloudSyncTime('upload');
                 if (result.confirmed) {
                     setCloudStatus(`已上传 ${db.length} 条数据到云端。`, 'success');
                     if (!silent) alert("已上传到云端。");
@@ -845,6 +876,7 @@
                     updatedAt: new Date().toISOString()
                 });
                 const uploadResult = await uploadCloudPayload(payload);
+                recordCloudSyncTime('bidirectional');
                 const message = `双向同步完成：云端新增 ${mergeResult.added} 条，更新 ${mergeResult.updated} 条，本地共 ${db.length} 条。`;
                 if (uploadResult.confirmed) {
                     setCloudStatus(message, 'success');
