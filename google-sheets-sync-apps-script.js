@@ -7,6 +7,7 @@ const HEADERS = [
   'precisionStatus',
   'formFilled',
   'timestamp',
+  'updatedAt',
   'formFilledAt',
   'formMatchedFrom'
 ];
@@ -65,6 +66,7 @@ function readRows() {
       precisionStatus: normalizePrecision(item.precisionStatus),
       formFilled: item.formFilled === true || String(item.formFilled).toLowerCase() === 'true' || String(item.formFilled).includes('已填') || String(item.formFilled).includes('已约'),
       timestamp: Number(item.timestamp || Date.now()),
+      updatedAt: String(item.updatedAt || ''),
       formFilledAt: String(item.formFilledAt || ''),
       formMatchedFrom: String(item.formMatchedFrom || '')
     };
@@ -84,6 +86,7 @@ function writeRows(data) {
     normalizePrecision(item.precisionStatus),
     !!item.formFilled,
     Number(item.timestamp || Date.now()),
+    item.updatedAt || '',
     item.formFilledAt || '',
     item.formMatchedFrom || ''
   ]);
