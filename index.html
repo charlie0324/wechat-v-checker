@@ -182,6 +182,7 @@
             <div class="check-actions">
                 <div class="action-bar">
                     <button onclick="saveCloudSettings()" class="btn btn-outline">保存同步设置</button>
+                    <button onclick="testCloudConnection()" class="btn btn-outline">测试云连接</button>
                     <button onclick="pullCloudData()" class="btn btn-primary">从云端拉取</button>
                     <button onclick="pushCloudData()" class="btn btn-success">上传到云端</button>
                 </div>
@@ -458,6 +459,21 @@
             if (showAlert) alert("云同步设置已保存。");
         }
 
+        function isGoogleAppsScriptUrl(url) {
+            return /^https:\/\/script\.google\.com\/macros\/s\//i.test(url || '');
+        }
+
+        function getCloudUrlIssue() {
+            if (!cloudConfig.url) return '';
+            if (isGoogleAppsScriptUrl(cloudConfig.url) && /\/dev(?:\?|$)/i.test(cloudConfig.url)) {
+                return '你现在填的是 /dev 测试链接。其他电脑通常不能访问，请在 Apps Script 里“部署 -> 管理部署”复制结尾是 /exec 的 Web App URL。';
+            }
+            if (isGoogleAppsScriptUrl(cloudConfig.url) && !/\/exec(?:\?|$)/i.test(cloudConfig.url)) {
+                return '这个地址不像正式 Web App URL。请复制 Apps Script 部署后的 Web App URL，正常应该以 /exec 结尾。';
+            }
+            return '';
+        }
+
         function setCloudStatus(message, type = 'normal') {
             const el = document.getElementById('cloudSyncStatus');
             if (!el) return;
@@ -470,6 +486,12 @@
             if (!cloudConfig.url || !cloudConfig.secret) {
                 setCloudStatus('请先填写接口地址和同步密钥。', 'error');
                 alert("请先填写接口地址和同步密钥。");
+                return false;
+            }
+            const issue = getCloudUrlIssue();
+            if (issue) {
+                setCloudStatus(issue, 'error');
+                alert(issue);
                 return false;
             }
             return true;
@@ -496,6 +518,24 @@
             } catch (error) {
                 throw new Error(text || '云端返回不是 JSON，请检查 Apps Script 是否部署为 Web App。');
             }
+        }
+
+        async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                return await fetch(url, { ...options, signal: controller.signal });
+            } finally {
+                clearTimeout(timeout);
+            }
+        }
+
+        async function loadCloudDataFetch() {
+            const response = await fetchWithTimeout(getCloudUrl('load'), {
+                method: 'GET',
+                cache: 'no-store'
+            }, 12000);
+            return readCloudResponse(response);
         }
 
         function queueCloudPush() {
@@ -555,8 +595,8 @@
                 const script = document.createElement('script');
                 const timeout = setTimeout(() => {
                     cleanup();
-                    reject(new Error('云端拉取超时，请检查 Web App URL、部署权限和网络。'));
-                }, 20000);
+                    reject(new Error('Edge 兼容读取超时。请确认 Apps Script 访问权限是“任何知道链接的人”，URL 以 /exec 结尾，并且这台电脑可以访问 script.google.com。'));
+                }, 45000);
 
                 function cleanup() {
                     clearTimeout(timeout);
@@ -582,6 +622,39 @@
             });
         }
 
+        async function loadCloudData() {
+            try {
+                return await loadCloudDataFetch();
+            } catch (fetchError) {
+                console.warn('标准读取失败，尝试 Edge 兼容读取:', fetchError);
+                try {
+                    return await loadCloudDataJsonp();
+                } catch (jsonpError) {
+                    throw new Error(`${jsonpError.message} 标准读取也失败：${fetchError.message}`);
+                }
+            }
+        }
+
+        async function testCloudConnection() {
+            if (!requireCloudConfig()) return;
+            isCloudSyncing = true;
+            setCloudStatus('正在测试云连接...');
+
+            try {
+                const result = await loadCloudData();
+                if (!result.ok) throw new Error(result.error || '云端连接失败');
+                const count = Array.isArray(result.data) ? result.data.length : 0;
+                setCloudStatus(`云连接正常，可以读取 ${count} 条云端数据。`, 'success');
+                alert(`云连接正常，可以读取 ${count} 条云端数据。`);
+            } catch (error) {
+                console.error(error);
+                setCloudStatus(`云连接失败：${error.message}`, 'error');
+                alert(`云连接失败：${error.message}`);
+            } finally {
+                isCloudSyncing = false;
+            }
+        }
+
         async function pullCloudData() {
             if (!requireCloudConfig()) return;
             if (db.length > 0 && !confirm("从云端拉取会用云端数据覆盖当前本地数据，确认继续吗？")) return;
@@ -590,7 +663,7 @@
             setCloudStatus('正在从云端拉取...');
 
             try {
-                const result = await loadCloudDataJsonp();
+                const result = await loadCloudData();
                 if (!result.ok) throw new Error(result.error || '云端读取失败');
 
                 pushUndo('从云端拉取前的本地数据');
