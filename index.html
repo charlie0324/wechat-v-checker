@@ -137,6 +137,8 @@
         .undo-status { min-height: 1.2em; }
         .sync-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; }
         .sync-status { min-height: 1.3em; color: var(--gray-500); }
+        .db-filter-panel { background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 8px; padding: 0.85rem; margin-bottom: 0.85rem; }
+        .db-filter-panel .form-group { margin-bottom: 0; }
         .toggle-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; color: var(--gray-700); }
         .toggle-row input { width: auto; }
         @media (min-width: 768px) {
@@ -256,6 +258,17 @@
                         </div>
                     </div>
                     
+                    <div class="db-filter-panel">
+                        <div class="form-group">
+                            <label>按 +V 日期筛选数据库</label>
+                            <div class="flex-row">
+                                <input type="date" id="dbDateFilterInput" onchange="applyDbDateFilter()">
+                                <button onclick="clearDbDateFilter()" class="btn btn-outline" style="flex-shrink: 0;">清除筛选</button>
+                            </div>
+                            <div id="dbDateFilterHint" class="text-sm text-gray mt-2">显示全部记录。</div>
+                        </div>
+                    </div>
+
                     <div class="table-wrap">
                         <table>
                             <thead>
@@ -375,6 +388,7 @@
 
         // 从 LocalStorage 获取数据
         let db = JSON.parse(localStorage.getItem('wechat_tracker_db')) || [];
+        let dbDateFilter = localStorage.getItem('wechat_tracker_db_date_filter') || '';
         let currentMissingState = null;
         let currentPeriodState = null;
         let undoStack = JSON.parse(localStorage.getItem('wechat_tracker_undo_stack')) || [];
@@ -385,6 +399,7 @@
         // 页面加载完成后渲染表格
         window.onload = () => {
             loadCloudSettingsToForm();
+            loadDbDateFilterToForm();
             renderTable();
             updateUndoStatus();
         };
@@ -426,6 +441,46 @@
             }
             const last = undoStack[undoStack.length - 1];
             el.innerText = `可撤回：${last.label}`;
+        }
+
+        function loadDbDateFilterToForm() {
+            const input = document.getElementById('dbDateFilterInput');
+            if (input) input.value = dbDateFilter || '';
+            updateDbDateFilterHint();
+        }
+
+        function applyDbDateFilter() {
+            const input = document.getElementById('dbDateFilterInput');
+            dbDateFilter = input ? input.value : '';
+            localStorage.setItem('wechat_tracker_db_date_filter', dbDateFilter);
+            renderTable();
+        }
+
+        function clearDbDateFilter() {
+            dbDateFilter = '';
+            localStorage.removeItem('wechat_tracker_db_date_filter');
+            const input = document.getElementById('dbDateFilterInput');
+            if (input) input.value = '';
+            renderTable();
+        }
+
+        function getVisibleDbRecords() {
+            return dbDateFilter ? db.filter(item => item.date === dbDateFilter) : db;
+        }
+
+        function updateDbDateFilterHint(visibleCount = null) {
+            const hint = document.getElementById('dbDateFilterHint');
+            if (!hint) return;
+            const count = visibleCount === null ? getVisibleDbRecords().length : visibleCount;
+            if (db.length === 0) {
+                hint.innerText = '本地数据库暂无记录。';
+                return;
+            }
+            if (dbDateFilter) {
+                hint.innerText = `${dbDateFilter} 共 ${count} 条记录，全部数据库共 ${db.length} 条。`;
+                return;
+            }
+            hint.innerText = `显示全部 ${db.length} 条记录。`;
         }
 
         function undoLastAction() {
@@ -1456,16 +1511,27 @@
         function renderTable() {
             const tbody = document.getElementById('dataTableBody');
             const emptyMsg = document.getElementById('emptyDataMsg');
+            const visibleRecords = getVisibleDbRecords();
             
             tbody.innerHTML = '';
             
             if (db.length === 0) {
+                emptyMsg.innerText = '暂无录入数据';
                 emptyMsg.classList.remove('hidden');
+                updateDbDateFilterHint(0);
+                return;
+            }
+
+            if (visibleRecords.length === 0) {
+                emptyMsg.innerText = `${dbDateFilter} 暂无 +V 记录`;
+                emptyMsg.classList.remove('hidden');
+                updateDbDateFilterHint(0);
                 return;
             }
             
             emptyMsg.classList.add('hidden');
-            db.forEach((item) => {
+            updateDbDateFilterHint(visibleRecords.length);
+            visibleRecords.forEach((item) => {
                 const formStatus = item.formFilled
                     ? `<span class="badge badge-green">已约</span> <button onclick="updateFormFilledById('${encodeURIComponent(item.id)}', false)" class="btn-sm bg-blue-light">撤销</button>`
                     : `<span class="badge badge-red">未约</span> <button onclick="updateFormFilledById('${encodeURIComponent(item.id)}', true)" class="btn-sm bg-green-light">标记</button>`;
