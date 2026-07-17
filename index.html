@@ -235,12 +235,12 @@
                 <div class="card">
                     <div class="card-title">
                         <div class="title-left">
-                            <span class="step-icon green">2</span> 核对表单或电话人员
+                            <span class="step-icon green">2</span> 核对已填表单人员
                         </div>
                     </div>
                     
                     <div class="form-group" style="margin-bottom: 0;">
-                        <label>输入已约表单或电话的ID名</label>
+                        <label>输入已填表单的ID名</label>
                         <div class="flex-row">
                             <input type="text" id="searchInput" oninput="searchData()" onkeyup="if(event.key === 'Enter') searchData()" placeholder="输入ID如: 张三" style="font-size: 1.1rem; padding: 0.8rem;">
                             <button onclick="searchData()" class="btn btn-success" style="padding: 0.8rem 1.5rem;">查询</button>
@@ -282,7 +282,9 @@
                                     <th>ID 名称</th>
                                     <th>+V 日期</th>
                                     <th>是否精准</th>
-                                    <th>表单或电话</th>
+                                    <th>是否约上电话</th>
+                                    <th>是否填表单</th>
+                                    <th>是否追踪</th>
                                     <th style="text-align: right;">操作</th>
                                 </tr>
                             </thead>
@@ -304,19 +306,19 @@
             <div class="card">
                 <div class="card-title">
                     <div class="title-left">
-                        <span class="step-icon">3</span> 表单或电话状态处理
+                        <span class="step-icon">3</span> 表单与电话状态处理
                     </div>
-                    <span class="text-xs text-gray">先标记已约，再生成未约名单和精准名单</span>
+                    <span class="text-xs text-gray">电话或表单任意一项完成，都会算作已约</span>
                 </div>
 
                 <div class="form-group">
-                    <label>已约表单或电话人员ID (每行一个)</label>
-                    <textarea id="formFilledInput" class="textarea-compact" placeholder="粘贴已经预约表单或电话的人。系统会在整个本地数据库里模糊搜索，匹配到后标记为“已约”。"></textarea>
+                    <label>已填表单人员ID (每行一个)</label>
+                    <textarea id="formFilledInput" class="textarea-compact" placeholder="粘贴已经填写表单的人。系统会在整个本地数据库里模糊搜索，匹配到后标记为“已填表单”。"></textarea>
                 </div>
 
                 <div class="check-actions">
                     <div class="action-bar">
-                        <button onclick="markFilledFromInput()" class="btn btn-success">标记为已约</button>
+                        <button onclick="markFilledFromInput()" class="btn btn-success">标记为已填表单</button>
                         <button onclick="clearFilledInput()" class="btn btn-outline">清空输入</button>
                     </div>
                     <span class="text-sm text-gray">匹配不确定时会列出候选，不会乱标。</span>
@@ -407,6 +409,8 @@
 
         // 页面加载完成后渲染表格
         window.onload = () => {
+            db = db.map(normalizeRecord);
+            saveDb(true);
             loadCloudSettingsToForm();
             loadDbDateFilterToForm();
             renderTable();
@@ -443,14 +447,51 @@
             record.updatedAt = new Date(now).toISOString();
         }
 
+        function parseStatusBool(value) {
+            return value === true ||
+                String(value).toLowerCase() === 'true' ||
+                String(value).includes('已填') ||
+                String(value).includes('已约') ||
+                String(value).includes('是');
+        }
+
+        function getTrackingValue(value) {
+            return ['untracked', 'tracked1', 'tracked2', 'tracked3', 'tracked4'].includes(value) ? value : 'untracked';
+        }
+
+        function getTrackingLabel(value) {
+            const labels = {
+                untracked: '未追踪',
+                tracked1: '已追踪1次',
+                tracked2: '已追踪2次',
+                tracked3: '已追踪3次',
+                tracked4: '已追踪4次'
+            };
+            return labels[getTrackingValue(value)];
+        }
+
+        function isBooked(record) {
+            return !!(record && (record.phoneBooked || record.formSubmitted || record.formFilled));
+        }
+
+        function syncBookedFlag(record) {
+            if (!record) return;
+            record.formFilled = !!(record.phoneBooked || record.formSubmitted);
+        }
+
         function normalizeRecord(record) {
             const baseTime = Number(record && record.timestamp) || Date.now();
-            const formValue = record && record.formFilled;
+            const legacyBooked = parseStatusBool(record && record.formFilled);
+            const phoneBooked = parseStatusBool(record && record.phoneBooked);
+            const formSubmitted = parseStatusBool(record && record.formSubmitted) || legacyBooked;
             return {
                 id: String(record && record.id || ''),
                 date: String(record && record.date || ''),
                 precisionStatus: getPrecisionValue(record && record.precisionStatus),
-                formFilled: formValue === true || String(formValue).toLowerCase() === 'true' || String(formValue).includes('已填') || String(formValue).includes('已约'),
+                phoneBooked,
+                formSubmitted,
+                trackingStatus: getTrackingValue(record && record.trackingStatus),
+                formFilled: phoneBooked || formSubmitted || legacyBooked,
                 timestamp: baseTime,
                 updatedAt: String(record && record.updatedAt || new Date(baseTime).toISOString()),
                 formFilledAt: String(record && record.formFilledAt || ''),
@@ -990,6 +1031,15 @@
             return 'unknown';
         }
 
+        function parseTrackingStatus(value) {
+            const text = (value || '').trim();
+            if (text === '已追踪1次' || text === 'tracked1') return 'tracked1';
+            if (text === '已追踪2次' || text === 'tracked2') return 'tracked2';
+            if (text === '已追踪3次' || text === 'tracked3') return 'tracked3';
+            if (text === '已追踪4次' || text === 'tracked4') return 'tracked4';
+            return 'untracked';
+        }
+
         function getPrecisionBadge(value) {
             const status = getPrecisionValue(value);
             if (status === 'accurate') return `<span class="badge badge-green">精准</span>`;
@@ -1005,6 +1055,31 @@
                     <option value="accurate" ${status === 'accurate' ? 'selected' : ''}>精准</option>
                     <option value="unknown" ${status === 'unknown' ? 'selected' : ''}>不确定</option>
                     <option value="inaccurate" ${status === 'inaccurate' ? 'selected' : ''}>不精准</option>
+                </select>
+            `;
+        }
+
+        function renderBookingSelect(id, field, value, yesLabel, noLabel, extraClass = 'precision-select') {
+            const encodedId = encodeURIComponent(id);
+            const boolValue = !!value;
+            return `
+                <select class="${extraClass}" onchange="updateBookingById('${encodedId}', '${field}', this.value)">
+                    <option value="false" ${!boolValue ? 'selected' : ''}>${noLabel}</option>
+                    <option value="true" ${boolValue ? 'selected' : ''}>${yesLabel}</option>
+                </select>
+            `;
+        }
+
+        function renderTrackingSelect(id, value, extraClass = 'precision-select') {
+            const encodedId = encodeURIComponent(id);
+            const status = getTrackingValue(value);
+            return `
+                <select class="${extraClass}" onchange="updateTrackingById('${encodedId}', this.value)">
+                    <option value="untracked" ${status === 'untracked' ? 'selected' : ''}>未追踪</option>
+                    <option value="tracked1" ${status === 'tracked1' ? 'selected' : ''}>已追踪1次</option>
+                    <option value="tracked2" ${status === 'tracked2' ? 'selected' : ''}>已追踪2次</option>
+                    <option value="tracked3" ${status === 'tracked3' ? 'selected' : ''}>已追踪3次</option>
+                    <option value="tracked4" ${status === 'tracked4' ? 'selected' : ''}>已追踪4次</option>
                 </select>
             `;
         }
@@ -1025,7 +1100,8 @@
 
         function markRecordFilled(index, sourceText) {
             if (!db[index]) return false;
-            db[index].formFilled = true;
+            db[index].formSubmitted = true;
+            syncBookedFlag(db[index]);
             db[index].formFilledAt = new Date().toISOString();
             db[index].formMatchedFrom = sourceText || db[index].id;
             touchRecord(db[index]);
@@ -1038,11 +1114,11 @@
             const resultBox = document.getElementById('markResults');
 
             if (entries.length === 0) {
-                alert("请先粘贴已经预约表单或电话的人。");
+                alert("请先粘贴已经填写表单的人。");
                 return;
             }
 
-            pushUndo(`批量标记已约 (${entries.length} 人)`);
+            pushUndo(`批量标记已填表单 (${entries.length} 人)`);
             let markedCount = 0;
             const marked = [];
             const uncertain = [];
@@ -1074,13 +1150,13 @@
             resultBox.classList.remove('hidden');
             resultBox.innerHTML = renderMarkResults(marked, uncertain, notFound);
 
-            document.getElementById('checkHint').innerText = `已自动标记 ${markedCount} 人为已约。未确定的人请在候选里手动点选。`;
+            document.getElementById('checkHint').innerText = `已自动标记 ${markedCount} 人为已填表单。未确定的人请在候选里手动点选。`;
         }
 
         function renderMarkResults(marked, uncertain, notFound) {
             const markedHtml = marked.length > 0 ? `
                 <div class="result-box res-success" style="text-align: left;">
-                    <div class="res-title text-green">已标记 ${marked.length} 人为已约</div>
+                    <div class="res-title text-green">已标记 ${marked.length} 人为已填表单</div>
                     <div>${marked.map(item => `<span class="similar-tag">${escapeHtml(item.input)} → ${escapeHtml(getRecordLabel(item.record))}</span>`).join('')}</div>
                 </div>
             ` : '';
@@ -1120,7 +1196,7 @@
             if (markRecordFilled(index, decodedInput)) {
                 saveDb();
                 refreshViews();
-                alert(`已标记：${db[index].id} 已约`);
+                alert(`已标记：${db[index].id} 已填表单`);
             }
         }
 
@@ -1138,12 +1214,12 @@
                 return;
             }
 
-            pushUndo(`标记已约：${db[index].id}`);
+            pushUndo(`标记已填表单：${db[index].id}`);
             markRecordFilled(index, id);
             saveDb();
             refreshViews();
             searchData();
-            alert(`已标记：${db[index].id} 已约`);
+            alert(`已标记：${db[index].id} 已填表单`);
         }
 
         function updateFormFilledById(encodedId, filled) {
@@ -1153,10 +1229,11 @@
                 alert("没有找到这条数据库记录。");
                 return;
             }
-            if (!!db[index].formFilled === !!filled) return;
+            if (!!db[index].formSubmitted === !!filled) return;
 
-            pushUndo(`${filled ? '标记已约' : '撤销已约标记'}：${db[index].id}`);
-            db[index].formFilled = !!filled;
+            pushUndo(`${filled ? '标记已填表单' : '撤销已填表单'}：${db[index].id}`);
+            db[index].formSubmitted = !!filled;
+            syncBookedFlag(db[index]);
             if (filled) {
                 db[index].formFilledAt = new Date().toISOString();
                 db[index].formMatchedFrom = db[index].formMatchedFrom || db[index].id;
@@ -1181,8 +1258,8 @@
             }
 
             const dayRecords = db.filter(item => item.date === dateStr);
-            const filled = dayRecords.filter(item => item.formFilled);
-            const missing = dayRecords.filter(item => !item.formFilled);
+            const filled = dayRecords.filter(isBooked);
+            const missing = dayRecords.filter(item => !isBooked(item));
             const accurate = dayRecords.filter(item => getPrecisionValue(item.precisionStatus) === 'accurate');
 
             if (dayRecords.length === 0) {
@@ -1279,7 +1356,7 @@
         }
 
         function formatAccurateListItem(item) {
-            return item.formFilled ? item.id : `${item.id}（精准但未约）`;
+            return isBooked(item) ? item.id : `${item.id}（精准但未约）`;
         }
 
         function buildAccurateCopyText(dateStr, accurateList) {
@@ -1394,10 +1471,10 @@
             }
 
             const records = getRecordsInRange(startDate, endDate);
-            const filled = records.filter(item => item.formFilled);
-            const missing = records.filter(item => !item.formFilled);
+            const filled = records.filter(isBooked);
+            const missing = records.filter(item => !isBooked(item));
             const accurate = records.filter(item => getPrecisionValue(item.precisionStatus) === 'accurate');
-            const accurateMissing = records.filter(item => getPrecisionValue(item.precisionStatus) === 'accurate' && !item.formFilled);
+            const accurateMissing = records.filter(item => getPrecisionValue(item.precisionStatus) === 'accurate' && !isBooked(item));
             const grouped = groupRecordsByDate(records);
             const days = Object.keys(grouped).sort();
 
@@ -1435,7 +1512,7 @@
 
             const breakdownHtml = days.map(date => {
                 const list = grouped[date];
-                const dayFilled = list.filter(item => item.formFilled).length;
+                const dayFilled = list.filter(isBooked).length;
                 const dayMissing = list.length - dayFilled;
                 const dayAccurate = list.filter(item => getPrecisionValue(item.precisionStatus) === 'accurate').length;
                 const dayRate = list.length ? Math.round((dayFilled / list.length) * 100) : 0;
@@ -1667,7 +1744,17 @@
                     }
                 } else {
                     const now = Date.now();
-                    db.unshift({ id: id, date: dateStr, precisionStatus: 'unknown', formFilled: false, timestamp: now, updatedAt: new Date(now).toISOString() });
+                    db.unshift({
+                        id: id,
+                        date: dateStr,
+                        precisionStatus: 'unknown',
+                        phoneBooked: false,
+                        formSubmitted: false,
+                        trackingStatus: 'untracked',
+                        formFilled: false,
+                        timestamp: now,
+                        updatedAt: new Date(now).toISOString()
+                    });
                     addedCount++;
                 }
             });
@@ -1711,11 +1798,16 @@
                     <div style="font-size: 1.1rem; color: #111;">ID: <b>${exactMatch.id}</b></div>
                     <div class="mt-2" style="line-height: 1.8;">
                         <div>+V 日期: <span class="badge badge-green">${exactMatch.date}</span></div>
-                        <div>表单或电话状态: ${exactMatch.formFilled ? '<span class="badge badge-green">已约</span>' : '<span class="badge badge-red">未约</span>'}</div>
+                        <div>统计口径: ${isBooked(exactMatch) ? '<span class="badge badge-green">已约</span>' : '<span class="badge badge-red">未约</span>'}</div>
+                        <div>电话: ${exactMatch.phoneBooked ? '<span class="badge badge-green">已约电话</span>' : '<span class="badge badge-red">未约电话</span>'}</div>
+                        <div>表单: ${exactMatch.formSubmitted ? '<span class="badge badge-green">已填表单</span>' : '<span class="badge badge-red">未填表单</span>'}</div>
+                        <div>追踪: <span class="badge badge-yellow">${getTrackingLabel(exactMatch.trackingStatus)}</span></div>
                         <div>是否精准: ${getPrecisionBadge(exactMatch.precisionStatus)}</div>
                     </div>
                     ${renderPrecisionSelect(exactMatch.id, exactMatch.precisionStatus, 'inline-select')}
-                    ${exactMatch.formFilled ? `<button class="btn btn-outline mt-3" onclick="updateFormFilledById('${encodeURIComponent(exactMatch.id)}', false)">撤销已约标记</button>` : `<button class="btn btn-success mt-3" onclick="markRecordFilledById('${encodeURIComponent(exactMatch.id)}')">标记为已约</button>`}
+                    ${renderBookingSelect(exactMatch.id, 'phoneBooked', exactMatch.phoneBooked, '已约电话', '未约电话', 'inline-select')}
+                    ${renderBookingSelect(exactMatch.id, 'formSubmitted', exactMatch.formSubmitted, '已填表单', '未填表单', 'inline-select')}
+                    ${renderTrackingSelect(exactMatch.id, exactMatch.trackingStatus, 'inline-select')}
                 `;
                 
                 if (similarMatches.length > 0) {
@@ -1729,11 +1821,14 @@
                         <div class="similar-card-title">${m.id}</div>
                         <div class="similar-card-info">
                             +V 日期: <span style="background: #d1fae5; color: #065f46; padding: 1px 4px; border-radius: 4px; font-weight: bold;">${m.date}</span>
-                            &nbsp;&nbsp;表单或电话: ${m.formFilled ? '<span class="badge badge-green">已约</span>' : '<span class="badge badge-red">未约</span>'}
+                            &nbsp;&nbsp;统计: ${isBooked(m) ? '<span class="badge badge-green">已约</span>' : '<span class="badge badge-red">未约</span>'}
                             &nbsp;&nbsp;是否精准: ${getPrecisionBadge(m.precisionStatus)}
+                            &nbsp;&nbsp;追踪: <span class="badge badge-yellow">${getTrackingLabel(m.trackingStatus)}</span>
                         </div>
                         ${renderPrecisionSelect(m.id, m.precisionStatus, 'inline-select')}
-                        ${m.formFilled ? `<button class="btn-sm bg-blue-light mt-2" onclick="updateFormFilledById('${encodeURIComponent(m.id)}', false)">撤销已约</button>` : `<button class="btn-sm bg-green-light mt-2" onclick="markRecordFilledById('${encodeURIComponent(m.id)}')">标记为已约</button>`}
+                        ${renderBookingSelect(m.id, 'phoneBooked', m.phoneBooked, '已约电话', '未约电话', 'inline-select')}
+                        ${renderBookingSelect(m.id, 'formSubmitted', m.formSubmitted, '已填表单', '未填表单', 'inline-select')}
+                        ${renderTrackingSelect(m.id, m.trackingStatus, 'inline-select')}
                     </div>
                 `).join('');
                 
@@ -1778,9 +1873,6 @@
             emptyMsg.classList.add('hidden');
             updateDbDateFilterHint(visibleRecords.length);
             visibleRecords.forEach((item) => {
-                const formStatus = item.formFilled
-                    ? `<span class="badge badge-green">已约</span> <button onclick="updateFormFilledById('${encodeURIComponent(item.id)}', false)" class="btn-sm bg-blue-light">撤销</button>`
-                    : `<span class="badge badge-red">未约</span> <button onclick="updateFormFilledById('${encodeURIComponent(item.id)}', true)" class="btn-sm bg-green-light">标记</button>`;
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td class="cell-id" title="${item.id}">${item.id}</td>
@@ -1788,7 +1880,9 @@
                         <input type="date" value="${item.date || ''}" onchange="updateVDate('${item.id.replace(/'/g, "\\'")}', this.value)" class="table-input">
                     </td>
                     <td>${renderPrecisionSelect(item.id, item.precisionStatus)}</td>
-                    <td>${formStatus}</td>
+                    <td>${renderBookingSelect(item.id, 'phoneBooked', item.phoneBooked, '已约电话', '未约电话')}</td>
+                    <td>${renderBookingSelect(item.id, 'formSubmitted', item.formSubmitted, '已填表单', '未填表单')}</td>
+                    <td>${renderTrackingSelect(item.id, item.trackingStatus)}</td>
                     <td style="text-align: right;">
                         <button onclick="deleteItem('${item.id.replace(/'/g, "\\'")}')" class="btn-sm bg-red-light">删除</button>
                     </td>
@@ -1823,6 +1917,47 @@
             }
         }
 
+        function updateBookingById(encodedId, field, value) {
+            const id = decodeURIComponent(encodedId || '');
+            const index = db.findIndex(item => item.id === id);
+            if (index === -1 || !['phoneBooked', 'formSubmitted'].includes(field)) return;
+
+            const nextValue = value === 'true';
+            if (!!db[index][field] === nextValue) return;
+
+            const label = field === 'phoneBooked' ? '是否约上电话' : '是否填表单';
+            pushUndo(`修改${label}：${db[index].id}`);
+            db[index][field] = nextValue;
+            if (field === 'formSubmitted') {
+                if (nextValue) {
+                    db[index].formFilledAt = new Date().toISOString();
+                    db[index].formMatchedFrom = db[index].formMatchedFrom || db[index].id;
+                } else {
+                    delete db[index].formFilledAt;
+                    delete db[index].formMatchedFrom;
+                }
+            }
+            syncBookedFlag(db[index]);
+            touchRecord(db[index]);
+            saveDb();
+            refreshViews();
+            searchData();
+        }
+
+        function updateTrackingById(encodedId, value) {
+            const id = decodeURIComponent(encodedId || '');
+            const index = db.findIndex(item => item.id === id);
+            const nextValue = getTrackingValue(value);
+            if (index > -1 && getTrackingValue(db[index].trackingStatus) !== nextValue) {
+                pushUndo(`修改是否追踪：${db[index].id}`);
+                db[index].trackingStatus = nextValue;
+                touchRecord(db[index]);
+                saveDb();
+                refreshViews();
+                searchData();
+            }
+        }
+
         function deleteItem(id) {
             if(confirm(`确定要删除ID "${id}" 的记录吗？`)) {
                 pushUndo(`删除记录：${id}`);
@@ -1845,13 +1980,15 @@
         function exportData() {
             if (db.length === 0) { alert("没有数据可导出！"); return; }
             let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-            csvContent += "微信ID,+V日期,是否精准,表单或电话状态\n";
+            csvContent += "微信ID,+V日期,是否精准,是否约上电话,是否填表单,是否追踪\n";
             db.forEach(item => {
                 let id = (item.id || "").replace(/,/g, "，");
                 let date = item.date || "";
                 let precision = getPrecisionLabel(item.precisionStatus);
-                let formStatus = item.formFilled ? "已约" : "未约";
-                csvContent += `${id},${date},${precision},${formStatus}\n`;
+                let phoneStatus = item.phoneBooked ? "已约电话" : "未约电话";
+                let formStatus = item.formSubmitted ? "已填表单" : "未填表单";
+                let trackingStatus = getTrackingLabel(item.trackingStatus);
+                csvContent += `${id},${date},${precision},${phoneStatus},${formStatus},${trackingStatus}\n`;
             });
             const encodedUri = encodeURI(csvContent);
             const link = document.createElement("a");
@@ -1879,19 +2016,28 @@
                         const thirdValue = parts.length > 2 ? parts[2].trim() : '';
                         const thirdIsPrecision = ['精准', '确定精准', '不确定', '不精准', 'accurate', 'unknown', 'inaccurate'].includes(thirdValue.toLowerCase()) || ['精准', '确定精准', '不确定', '不精准'].includes(thirdValue);
                         const precisionStatus = thirdIsPrecision ? parsePrecisionStatus(thirdValue) : 'unknown';
-                        const formStatus = thirdIsPrecision ? (parts.length > 3 ? parts[3].trim() : '') : (parts.length > 3 ? parts[3].trim() : '');
-                        const formFilled = formStatus.includes('已约') || formStatus.includes('已填');
+                        const fourthValue = parts.length > 3 ? parts[3].trim() : '';
+                        const fifthValue = parts.length > 4 ? parts[4].trim() : '';
+                        const sixthValue = parts.length > 5 ? parts[5].trim() : '';
+                        const legacyBooked = fourthValue.includes('已约') || fourthValue.includes('已填');
+                        const phoneBooked = fourthValue.includes('已约电话') || fourthValue === '是';
+                        const formSubmitted = fifthValue ? (fifthValue.includes('已填') || fifthValue === '是') : legacyBooked;
+                        const trackingStatus = parseTrackingStatus(sixthValue);
+                        const formFilled = phoneBooked || formSubmitted || legacyBooked;
                         if (wxId) {
                             const idx = db.findIndex(item => item.id === wxId);
                             if (idx > -1) {
                                 let changed = false;
                                 if(db[idx].date !== vDate) { db[idx].date = vDate; changed = true; }
                                 if(thirdIsPrecision && getPrecisionValue(db[idx].precisionStatus) !== precisionStatus) { db[idx].precisionStatus = precisionStatus; changed = true; }
-                                if(parts.length > 3 && db[idx].formFilled !== formFilled) { db[idx].formFilled = formFilled; changed = true; }
+                                if(parts.length > 3 && !!db[idx].phoneBooked !== phoneBooked) { db[idx].phoneBooked = phoneBooked; changed = true; }
+                                if(parts.length > 3 && !!db[idx].formSubmitted !== formSubmitted) { db[idx].formSubmitted = formSubmitted; changed = true; }
+                                if(parts.length > 5 && getTrackingValue(db[idx].trackingStatus) !== trackingStatus) { db[idx].trackingStatus = trackingStatus; changed = true; }
+                                syncBookedFlag(db[idx]);
                                 if(changed) { touchRecord(db[idx]); updatedCount++; }
                             } else {
                                 const now = Date.now();
-                                db.push({ id: wxId, date: vDate, precisionStatus, formFilled, timestamp: now, updatedAt: new Date(now).toISOString() });
+                                db.push({ id: wxId, date: vDate, precisionStatus, phoneBooked, formSubmitted, trackingStatus, formFilled, timestamp: now, updatedAt: new Date(now).toISOString() });
                                 importedCount++;
                             }
                         }
