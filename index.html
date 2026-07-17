@@ -1536,6 +1536,7 @@
                         <div class="res-title text-green">这个周期全部已约</div>
                         <div class="text-sm">${startDate} 到 ${endDate} 的 +V 人员都已经标记为已约。</div>
                     </div>
+                    ${renderPeriodDetailTable()}
                     <div class="daily-breakdown">${breakdownHtml}</div>
                 `;
                 document.getElementById('periodHint').innerText = `${startDate} 到 ${endDate} 没有未约人员，精准 ${accurate.length} 人。`;
@@ -1546,9 +1547,48 @@
                 ${renderPeriodMissingCopyBlock()}
                 ${renderPeriodAccurateMissingCopyBlock()}
                 ${renderPeriodAccurateCopyBlock()}
+                ${renderPeriodDetailTable()}
                 <div class="daily-breakdown">${breakdownHtml}</div>
             `;
             document.getElementById('periodHint').innerText = `${startDate} 到 ${endDate} 共有 ${missing.length} 人未约，精准 ${accurate.length} 人，其中精准但未约 ${accurateMissing.length} 人。`;
+        }
+
+        function renderPeriodDetailTable() {
+            if (!currentPeriodState) return '';
+            const rows = currentPeriodState.records
+                .slice()
+                .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (b.timestamp || 0) - (a.timestamp || 0))
+                .map(item => `
+                    <tr>
+                        <td>${escapeHtml(item.date || '')}</td>
+                        <td class="person-name" title="${escapeHtml(item.id)}">${escapeHtml(item.id)}</td>
+                        <td>${getPrecisionBadge(item.precisionStatus)}</td>
+                        <td>${item.phoneBooked ? '<span class="badge badge-green">已约电话</span>' : '<span class="badge badge-red">未约电话</span>'}</td>
+                        <td>${item.formSubmitted ? '<span class="badge badge-green">已填表单</span>' : '<span class="badge badge-red">未填表单</span>'}</td>
+                        <td><span class="badge badge-yellow">${getTrackingLabel(item.trackingStatus)}</span></td>
+                        <td class="text-right">${isBooked(item) ? '<span class="badge badge-green">已约</span>' : '<span class="badge badge-red">未约</span>'}</td>
+                    </tr>
+                `).join('');
+
+            return `
+                <div class="table-wrap tall mt-3">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>+V 日期</th>
+                                <th>ID 名称</th>
+                                <th>是否精准</th>
+                                <th>是否约上电话</th>
+                                <th>是否填表单</th>
+                                <th>是否追踪</th>
+                                <th class="text-right">统计口径</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+                <div class="mt-2 text-sm text-gray">周期人员明细：共 ${currentPeriodState.records.length} 人，按 +V 日期排序。</div>
+            `;
         }
 
         function buildPeriodMissingCopyText() {
