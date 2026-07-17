@@ -5,6 +5,9 @@ const HEADERS = [
   'id',
   'date',
   'precisionStatus',
+  'phoneBooked',
+  'formSubmitted',
+  'trackingStatus',
   'formFilled',
   'timestamp',
   'updatedAt',
@@ -64,7 +67,10 @@ function readRows() {
       id: String(item.id || ''),
       date: formatDateValue(item.date),
       precisionStatus: normalizePrecision(item.precisionStatus),
-      formFilled: item.formFilled === true || String(item.formFilled).toLowerCase() === 'true' || String(item.formFilled).includes('已填') || String(item.formFilled).includes('已约'),
+      phoneBooked: parseBooleanValue(item.phoneBooked),
+      formSubmitted: parseBooleanValue(item.formSubmitted) || parseBooleanValue(item.formFilled),
+      trackingStatus: normalizeTracking(item.trackingStatus),
+      formFilled: parseBooleanValue(item.phoneBooked) || parseBooleanValue(item.formSubmitted) || parseBooleanValue(item.formFilled),
       timestamp: Number(item.timestamp || Date.now()),
       updatedAt: String(item.updatedAt || ''),
       formFilledAt: String(item.formFilledAt || ''),
@@ -84,7 +90,10 @@ function writeRows(data) {
     item.id || '',
     item.date || '',
     normalizePrecision(item.precisionStatus),
-    !!item.formFilled,
+    !!item.phoneBooked,
+    !!item.formSubmitted,
+    normalizeTracking(item.trackingStatus),
+    !!(item.phoneBooked || item.formSubmitted || item.formFilled),
     Number(item.timestamp || Date.now()),
     item.updatedAt || '',
     item.formFilledAt || '',
@@ -97,6 +106,22 @@ function normalizePrecision(value) {
   if (value === 'accurate' || value === '精准' || value === '确定精准') return 'accurate';
   if (value === 'inaccurate' || value === '不精准') return 'inaccurate';
   return 'unknown';
+}
+
+function parseBooleanValue(value) {
+  return value === true ||
+    String(value).toLowerCase() === 'true' ||
+    String(value).includes('已填') ||
+    String(value).includes('已约') ||
+    String(value).includes('是');
+}
+
+function normalizeTracking(value) {
+  if (value === 'tracked1' || value === '已追踪1次') return 'tracked1';
+  if (value === 'tracked2' || value === '已追踪2次') return 'tracked2';
+  if (value === 'tracked3' || value === '已追踪3次') return 'tracked3';
+  if (value === 'tracked4' || value === '已追踪4次') return 'tracked4';
+  return 'untracked';
 }
 
 function formatDateValue(value) {
