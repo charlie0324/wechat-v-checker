@@ -1,5 +1,6 @@
 const SECRET = '把这里改成你的同步密钥';
 const SHEET_NAME = 'wechat_tracker_db';
+const METRICS_SHEET_NAME = 'wechat_tracker_daily_metrics';
 
 const HEADERS = [
   'id',
@@ -8,6 +9,8 @@ const HEADERS = [
   'phoneBooked',
   'formSubmitted',
   'trackingStatus',
+  'dealClosed',
+  'dealAmount',
   'formFilled',
   'timestamp',
   'updatedAt',
@@ -15,12 +18,18 @@ const HEADERS = [
   'formMatchedFrom'
 ];
 
+const METRIC_HEADERS = [
+  'date',
+  'spendAmount',
+  'updatedAt'
+];
+
 function doGet(e) {
   try {
     assertSecret(e.parameter.secret);
     const action = e.parameter.action || 'load';
     if (action !== 'load') return json({ ok: false, error: 'Unknown action. 上传请使用 POST，请确认 HTML 和 Apps Script 都是最新版。' });
-    return output(e, { ok: true, data: readRows(), updatedAt: new Date().toISOString() });
+    return output(e, { ok: true, data: readRows(), metrics: readMetrics(), updatedAt: new Date().toISOString() });
   } catch (error) {
     return output(e, { ok: false, error: error.message });
   }
@@ -31,8 +40,10 @@ function doPost(e) {
     const payload = JSON.parse(e.postData.contents || '{}');
     assertSecret(payload.secret || (e.parameter && e.parameter.secret));
     const data = Array.isArray(payload.data) ? payload.data : [];
+    const metrics = Array.isArray(payload.metrics) ? payload.metrics : [];
     writeRows(data);
-    return json({ ok: true, count: data.length, updatedAt: new Date().toISOString() });
+    writeMetrics(metrics);
+    return json({ ok: true, count: data.length, metricCount: metrics.length, updatedAt: new Date().toISOString() });
   } catch (error) {
     return json({ ok: false, error: error.message });
   }
@@ -49,6 +60,13 @@ function getSheet() {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = spreadsheet.getSheetByName(SHEET_NAME);
   if (!sheet) sheet = spreadsheet.insertSheet(SHEET_NAME);
+  return sheet;
+}
+
+function getMetricsSheet() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = spreadsheet.getSheetByName(METRICS_SHEET_NAME);
+  if (!sheet) sheet = spreadsheet.insertSheet(METRICS_SHEET_NAME);
   return sheet;
 }
 
@@ -70,6 +88,8 @@ function readRows() {
       phoneBooked: parseBooleanValue(item.phoneBooked),
       formSubmitted: parseBooleanValue(item.formSubmitted) || parseBooleanValue(item.formFilled),
       trackingStatus: normalizeTracking(item.trackingStatus),
+      dealClosed: parseBooleanValue(item.dealClosed) || parseAmount(item.dealAmount) > 0,
+      dealAmount: parseAmount(item.dealAmount),
       formFilled: parseBooleanValue(item.phoneBooked) || parseBooleanValue(item.formSubmitted) || parseBooleanValue(item.formFilled),
       timestamp: Number(item.timestamp || Date.now()),
       updatedAt: String(item.updatedAt || ''),
@@ -93,6 +113,8 @@ function writeRows(data) {
     !!item.phoneBooked,
     !!item.formSubmitted,
     normalizeTracking(item.trackingStatus),
+    !!(item.dealClosed || parseAmount(item.dealAmount) > 0),
+    parseAmount(item.dealAmount),
     !!(item.phoneBooked || item.formSubmitted || item.formFilled),
     Number(item.timestamp || Date.now()),
     item.updatedAt || '',
@@ -100,6 +122,40 @@ function writeRows(data) {
     item.formMatchedFrom || ''
   ]);
   sheet.getRange(2, 1, rows.length, HEADERS.length).setValues(rows);
+}
+
+function readMetrics() {
+  const sheet = getMetricsSheet();
+  const values = sheet.getDataRange().getValues();
+  if (values.length <= 1) return [];
+
+  const headers = values[0].map(String);
+  return values.slice(1).filter(row => row[0]).map(row => {
+    const item = {};
+    headers.forEach((header, index) => {
+      item[header] = row[index];
+    });
+    return {
+      date: formatDateValue(item.date),
+      spendAmount: parseAmount(item.spendAmount),
+      updatedAt: String(item.updatedAt || '')
+    };
+  });
+}
+
+function writeMetrics(metrics) {
+  const sheet = getMetricsSheet();
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, METRIC_HEADERS.length).setValues([METRIC_HEADERS]);
+
+  if (metrics.length === 0) return;
+
+  const rows = metrics.map(item => [
+    formatDateValue(item.date),
+    parseAmount(item.spendAmount),
+    item.updatedAt || ''
+  ]);
+  sheet.getRange(2, 1, rows.length, METRIC_HEADERS.length).setValues(rows);
 }
 
 function normalizePrecision(value) {
@@ -113,7 +169,13 @@ function parseBooleanValue(value) {
     String(value).toLowerCase() === 'true' ||
     String(value).includes('已填') ||
     String(value).includes('已约') ||
+    String(value).includes('已成交') ||
     String(value).includes('是');
+}
+
+function parseAmount(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.round(number * 100) / 100 : 0;
 }
 
 function normalizeTracking(value) {
