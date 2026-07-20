@@ -139,12 +139,15 @@
         .sync-status { min-height: 1.3em; color: var(--gray-500); }
         .db-filter-panel { background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 8px; padding: 0.85rem; margin-bottom: 0.85rem; }
         .db-filter-panel .form-group { margin-bottom: 0; }
+        .finance-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; align-items: end; }
+        .finance-note { min-height: 1.2em; }
         .toggle-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; color: var(--gray-700); }
         .toggle-row input { width: auto; }
         @media (min-width: 768px) {
             .check-grid { grid-template-columns: 1fr 1fr; }
             .stats-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
             .period-controls { grid-template-columns: 1fr 1fr auto; }
+            .finance-grid { grid-template-columns: 1fr 1fr auto; }
             .daily-breakdown { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .sync-grid { grid-template-columns: 2fr 1fr; }
         }
@@ -285,6 +288,8 @@
                                     <th>是否约上电话</th>
                                     <th>是否填表单</th>
                                     <th>是否追踪</th>
+                                    <th>是否成交</th>
+                                    <th>成交金额</th>
                                     <th style="text-align: right;">操作</th>
                                 </tr>
                             </thead>
@@ -348,6 +353,31 @@
             </div>
         </div>
 
+        <!-- 每日消耗看板 -->
+        <div class="section-stack">
+            <div class="card">
+                <div class="card-title">
+                    <div class="title-left">
+                        <span class="step-icon green">¥</span> 每日消耗看板
+                    </div>
+                    <span class="text-xs text-gray">成交金额在客户记录里录入，这里只录每天投放消耗</span>
+                </div>
+
+                <div class="finance-grid">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>日期</label>
+                        <input type="date" id="metricDateInput" onchange="loadDailyMetricToForm()">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>每日消耗金额</label>
+                        <input type="number" id="spendAmountInput" min="0" step="0.01" placeholder="0">
+                    </div>
+                    <button onclick="saveDailyMetric()" class="btn btn-primary">保存消耗</button>
+                </div>
+                <div id="metricHint" class="finance-note text-sm text-gray mt-2">今日消耗未录入。</div>
+            </div>
+        </div>
+
         <!-- 周期统计区域 -->
         <div class="section-stack">
             <div class="card">
@@ -393,9 +423,11 @@
         document.getElementById('checkDateInput').value = today;
         document.getElementById('periodStartInput').value = today;
         document.getElementById('periodEndInput').value = today;
+        document.getElementById('metricDateInput').value = today;
 
         // 从 LocalStorage 获取数据
         let db = JSON.parse(localStorage.getItem('wechat_tracker_db')) || [];
+        let dailyMetrics = JSON.parse(localStorage.getItem('wechat_tracker_daily_metrics')) || {};
         let dbDateFilter = localStorage.getItem('wechat_tracker_db_date_filter') || '';
         let currentMissingState = null;
         let currentPeriodState = null;
@@ -411,8 +443,11 @@
         window.onload = () => {
             db = db.map(normalizeRecord);
             saveDb(true);
+            dailyMetrics = normalizeDailyMetricsMap(dailyMetrics);
+            saveDailyMetrics(true);
             loadCloudSettingsToForm();
             loadDbDateFilterToForm();
+            loadDailyMetricToForm();
             renderTable();
             renderCloudSyncTimes();
             updateUndoStatus();
@@ -424,10 +459,15 @@
             return JSON.parse(JSON.stringify(db));
         }
 
+        function cloneDailyMetrics() {
+            return JSON.parse(JSON.stringify(dailyMetrics));
+        }
+
         function pushUndo(label) {
             undoStack.push({
                 label,
                 db: cloneDb(),
+                dailyMetrics: cloneDailyMetrics(),
                 time: new Date().toISOString()
             });
             if (undoStack.length > 15) undoStack.shift();
@@ -438,6 +478,87 @@
         function saveDb(skipCloudSync = false) {
             localStorage.setItem('wechat_tracker_db', JSON.stringify(db));
             if (!skipCloudSync && cloudConfig.autoSync) queueCloudPush();
+        }
+
+        function saveDailyMetrics(skipCloudSync = false) {
+            localStorage.setItem('wechat_tracker_daily_metrics', JSON.stringify(dailyMetrics));
+            if (!skipCloudSync && cloudConfig.autoSync) queueCloudPush();
+        }
+
+        function parseAmount(value) {
+            const number = Number(value);
+            return Number.isFinite(number) && number > 0 ? Math.round(number * 100) / 100 : 0;
+        }
+
+        function formatMoney(value) {
+            const number = parseAmount(value);
+            return `¥${number.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+
+        function formatRoi(dealAmount, spendAmount) {
+            const spend = parseAmount(spendAmount);
+            if (spend <= 0) return '暂无';
+            return (parseAmount(dealAmount) / spend).toFixed(2);
+        }
+
+        function normalizeDailyMetric(metric) {
+            const updatedAt = String(metric && metric.updatedAt || new Date().toISOString());
+            return {
+                date: String(metric && metric.date || ''),
+                spendAmount: parseAmount(metric && metric.spendAmount),
+                updatedAt
+            };
+        }
+
+        function normalizeDailyMetricsMap(value) {
+            const map = {};
+            if (Array.isArray(value)) {
+                value.forEach(item => {
+                    const metric = normalizeDailyMetric(item);
+                    if (metric.date) map[metric.date] = metric;
+                });
+                return map;
+            }
+            Object.keys(value || {}).forEach(date => {
+                const metric = normalizeDailyMetric({ ...value[date], date });
+                if (metric.date) map[metric.date] = metric;
+            });
+            return map;
+        }
+
+        function getDailyMetricsArray() {
+            return Object.keys(dailyMetrics).sort().map(date => dailyMetrics[date]);
+        }
+
+        function getMetricsInRange(startDate, endDate) {
+            return getDailyMetricsArray().filter(item => item.date && item.date >= startDate && item.date <= endDate);
+        }
+
+        function getMetricVersion(metric) {
+            const updatedAt = Date.parse(metric && metric.updatedAt || '');
+            return Number.isNaN(updatedAt) ? 0 : updatedAt;
+        }
+
+        function mergeCloudMetrics(cloudMetrics) {
+            const incoming = normalizeDailyMetricsMap(cloudMetrics || {});
+            let added = 0;
+            let updated = 0;
+
+            Object.keys(incoming).forEach(date => {
+                const cloudMetric = incoming[date];
+                const localMetric = dailyMetrics[date];
+                if (!localMetric) {
+                    dailyMetrics[date] = cloudMetric;
+                    added++;
+                    return;
+                }
+                if (getMetricVersion(cloudMetric) > getMetricVersion(localMetric)) {
+                    dailyMetrics[date] = cloudMetric;
+                    updated++;
+                }
+            });
+
+            return { added, updated, total: Object.keys(dailyMetrics).length };
         }
 
         function touchRecord(record) {
@@ -452,6 +573,7 @@
                 String(value).toLowerCase() === 'true' ||
                 String(value).includes('已填') ||
                 String(value).includes('已约') ||
+                String(value).includes('已成交') ||
                 String(value).includes('是');
         }
 
@@ -484,6 +606,8 @@
             const legacyBooked = parseStatusBool(record && record.formFilled);
             const phoneBooked = parseStatusBool(record && record.phoneBooked);
             const formSubmitted = parseStatusBool(record && record.formSubmitted) || legacyBooked;
+            const dealAmount = parseAmount(record && record.dealAmount);
+            const dealClosed = parseStatusBool(record && record.dealClosed) || dealAmount > 0;
             return {
                 id: String(record && record.id || ''),
                 date: String(record && record.date || ''),
@@ -491,6 +615,8 @@
                 phoneBooked,
                 formSubmitted,
                 trackingStatus: getTrackingValue(record && record.trackingStatus),
+                dealClosed,
+                dealAmount,
                 formFilled: phoneBooked || formSubmitted || legacyBooked,
                 timestamp: baseTime,
                 updatedAt: String(record && record.updatedAt || new Date(baseTime).toISOString()),
@@ -547,6 +673,7 @@
         }
 
         function refreshViews() {
+            loadDailyMetricToForm();
             renderTable();
             if (currentMissingState) generateMissingList(true);
             if (currentPeriodState) generatePeriodReport(true);
@@ -612,11 +739,44 @@
 
             const last = undoStack.pop();
             db = last.db || [];
+            dailyMetrics = normalizeDailyMetricsMap(last.dailyMetrics || dailyMetrics);
             saveDb();
+            saveDailyMetrics(true);
             localStorage.setItem('wechat_tracker_undo_stack', JSON.stringify(undoStack));
             refreshViews();
             searchData();
             alert(`已撤回：${last.label}`);
+        }
+
+        function loadDailyMetricToForm() {
+            const dateInput = document.getElementById('metricDateInput');
+            const spendInput = document.getElementById('spendAmountInput');
+            const hint = document.getElementById('metricHint');
+            if (!dateInput || !spendInput || !hint) return;
+            const date = dateInput.value || today;
+            const metric = dailyMetrics[date];
+            spendInput.value = metric ? metric.spendAmount : '';
+            hint.innerText = metric
+                ? `${date} 已录入消耗：${formatMoney(metric.spendAmount)}。成交金额会从客户记录自动汇总。`
+                : `${date} 消耗未录入。`;
+        }
+
+        function saveDailyMetric() {
+            const date = document.getElementById('metricDateInput').value;
+            if (!date) {
+                alert("请先选择金额日期。");
+                return;
+            }
+            const spendAmount = parseAmount(document.getElementById('spendAmountInput').value);
+            pushUndo(`保存 ${date} 消耗`);
+            dailyMetrics[date] = {
+                date,
+                spendAmount,
+                updatedAt: new Date().toISOString()
+            };
+            saveDailyMetrics();
+            refreshViews();
+            alert(`已保存 ${date} 消耗：${formatMoney(spendAmount)}。`);
         }
 
         function loadCloudSettingsToForm() {
@@ -808,6 +968,7 @@
             const payload = JSON.stringify({
                 secret: cloudConfig.secret,
                 data: db,
+                metrics: getDailyMetricsArray(),
                 updatedAt: new Date().toISOString()
             });
 
@@ -815,7 +976,7 @@
                 const result = await uploadCloudPayload(payload);
                 recordCloudSyncTime('upload');
                 if (result.confirmed) {
-                    setCloudStatus(`已上传 ${db.length} 条数据到云端。`, 'success');
+                    setCloudStatus(`已上传 ${db.length} 条名单数据、${Object.keys(dailyMetrics).length} 天金额数据到云端。`, 'success');
                     if (!silent) alert("已上传到云端。");
                 } else {
                     setCloudStatus(`已用兼容模式发送 ${db.length} 条数据。浏览器限制下无法读取云端确认。`, 'success');
@@ -885,8 +1046,9 @@
                 const result = await loadCloudData();
                 if (!result.ok) throw new Error(result.error || '云端连接失败');
                 const count = Array.isArray(result.data) ? result.data.length : 0;
-                setCloudStatus(`云连接正常，可以读取 ${count} 条云端数据。`, 'success');
-                alert(`云连接正常，可以读取 ${count} 条云端数据。`);
+                const metricCount = Array.isArray(result.metrics) ? result.metrics.length : 0;
+                setCloudStatus(`云连接正常，可以读取 ${count} 条名单数据、${metricCount} 条金额数据。`, 'success');
+                alert(`云连接正常，可以读取 ${count} 条名单数据、${metricCount} 条金额数据。`);
             } catch (error) {
                 console.error(error);
                 setCloudStatus(`云连接失败：${error.message}`, 'error');
@@ -908,17 +1070,20 @@
                 if (!result.ok) throw new Error(result.error || '云端读取失败');
 
                 const mergeResult = mergeCloudRecords(result.data);
+                const metricMergeResult = mergeCloudMetrics(result.metrics);
                 saveDb(true);
+                saveDailyMetrics(true);
                 refreshViews();
 
                 const payload = JSON.stringify({
                     secret: cloudConfig.secret,
                     data: db,
+                    metrics: getDailyMetricsArray(),
                     updatedAt: new Date().toISOString()
                 });
                 const uploadResult = await uploadCloudPayload(payload);
                 recordCloudSyncTime('bidirectional');
-                const message = `双向同步完成：云端新增 ${mergeResult.added} 条，更新 ${mergeResult.updated} 条，本地共 ${db.length} 条。`;
+                const message = `双向同步完成：名单新增 ${mergeResult.added} 条、更新 ${mergeResult.updated} 条；金额新增 ${metricMergeResult.added} 天、更新 ${metricMergeResult.updated} 天。`;
                 if (uploadResult.confirmed) {
                     setCloudStatus(message, 'success');
                 } else {
@@ -947,9 +1112,11 @@
 
                 pushUndo('从云端拉取前的本地数据');
                 db = Array.isArray(result.data) ? result.data.map(normalizeRecord) : [];
+                dailyMetrics = normalizeDailyMetricsMap(result.metrics || {});
                 saveDb(true);
+                saveDailyMetrics(true);
                 refreshViews();
-                setCloudStatus(`已从云端拉取 ${db.length} 条数据。`, 'success');
+                setCloudStatus(`已从云端拉取 ${db.length} 条名单数据、${Object.keys(dailyMetrics).length} 天金额数据。`, 'success');
                 alert("已从云端拉取数据。");
             } catch (error) {
                 console.error(error);
@@ -1082,6 +1249,22 @@
                     <option value="tracked4" ${status === 'tracked4' ? 'selected' : ''}>已追踪4次</option>
                 </select>
             `;
+        }
+
+        function renderDealSelect(id, value, extraClass = 'precision-select') {
+            const encodedId = encodeURIComponent(id);
+            const boolValue = !!value;
+            return `
+                <select class="${extraClass}" onchange="updateDealClosedById('${encodedId}', this.value)">
+                    <option value="false" ${!boolValue ? 'selected' : ''}>未成交</option>
+                    <option value="true" ${boolValue ? 'selected' : ''}>已成交</option>
+                </select>
+            `;
+        }
+
+        function renderDealAmountInput(id, value) {
+            const encodedId = encodeURIComponent(id);
+            return `<input type="number" min="0" step="0.01" value="${parseAmount(value) || ''}" onchange="updateDealAmountById('${encodedId}', this.value)" class="table-input normal-text" placeholder="0">`;
         }
 
         function findFormMatches(rawId) {
@@ -1475,6 +1658,11 @@
             const missing = records.filter(item => !isBooked(item));
             const accurate = records.filter(item => getPrecisionValue(item.precisionStatus) === 'accurate');
             const accurateMissing = records.filter(item => getPrecisionValue(item.precisionStatus) === 'accurate' && !isBooked(item));
+            const accuratePhoneBooked = records.filter(item => getPrecisionValue(item.precisionStatus) === 'accurate' && item.phoneBooked);
+            const dealClosed = records.filter(item => item.dealClosed);
+            const periodMetrics = getMetricsInRange(startDate, endDate);
+            const totalDealAmount = dealClosed.reduce((sum, item) => sum + parseAmount(item.dealAmount), 0);
+            const totalSpendAmount = periodMetrics.reduce((sum, item) => sum + parseAmount(item.spendAmount), 0);
             const grouped = groupRecordsByDate(records);
             const days = Object.keys(grouped).sort();
 
@@ -1486,7 +1674,22 @@
                 return;
             }
 
-            currentPeriodState = { startDate, endDate, records, filled, missing, accurate, accurateMissing, grouped, days };
+            currentPeriodState = {
+                startDate,
+                endDate,
+                records,
+                filled,
+                missing,
+                accurate,
+                accurateMissing,
+                accuratePhoneBooked,
+                dealClosed,
+                periodMetrics,
+                totalDealAmount,
+                totalSpendAmount,
+                grouped,
+                days
+            };
             renderPeriodReport();
             summary.classList.remove('hidden');
             resultWrap.classList.remove('hidden');
@@ -1495,7 +1698,7 @@
         function renderPeriodReport() {
             if (!currentPeriodState) return;
 
-            const { startDate, endDate, records, filled, missing, accurate, accurateMissing, grouped, days } = currentPeriodState;
+            const { startDate, endDate, records, filled, missing, accurate, accurateMissing, accuratePhoneBooked, totalDealAmount, totalSpendAmount, grouped, days } = currentPeriodState;
             const summary = document.getElementById('periodSummary');
             const resultWrap = document.getElementById('periodResults');
             const rate = records.length ? Math.round((filled.length / records.length) * 100) : 0;
@@ -1508,6 +1711,8 @@
                 <div class="stat-tile"><span class="stat-value">${rate}%</span><span class="stat-label">周期约成率</span></div>
                 <div class="stat-tile"><span class="stat-value">${accurate.length}</span><span class="stat-label">精准人数</span></div>
                 <div class="stat-tile"><span class="stat-value">${precisionRate}%</span><span class="stat-label">周期精准率</span></div>
+                <div class="stat-tile"><span class="stat-value">${accuratePhoneBooked.length}</span><span class="stat-label">精准+已约电话</span></div>
+                <div class="stat-tile"><span class="stat-value">${formatRoi(totalDealAmount, totalSpendAmount)}</span><span class="stat-label">周期ROI</span></div>
             `;
 
             const breakdownHtml = days.map(date => {
@@ -1515,13 +1720,14 @@
                 const dayFilled = list.filter(isBooked).length;
                 const dayMissing = list.length - dayFilled;
                 const dayAccurate = list.filter(item => getPrecisionValue(item.precisionStatus) === 'accurate').length;
+                const dayAccuratePhone = list.filter(item => getPrecisionValue(item.precisionStatus) === 'accurate' && item.phoneBooked).length;
                 const dayRate = list.length ? Math.round((dayFilled / list.length) * 100) : 0;
                 const dayPrecisionRate = list.length ? Math.round((dayAccurate / list.length) * 100) : 0;
                 return `
                     <div class="breakdown-item">
                         <div>
                             <div class="breakdown-date">${date}</div>
-                            <div class="breakdown-meta">加微 ${list.length} 人 · 已约 ${dayFilled} 人 · 未约 ${dayMissing} 人 · 精准 ${dayAccurate} 人</div>
+                            <div class="breakdown-meta">加微 ${list.length} 人 · 已约 ${dayFilled} 人 · 未约 ${dayMissing} 人 · 精准 ${dayAccurate} 人 · 精准电话 ${dayAccuratePhone} 人</div>
                         </div>
                         <span class="badge ${dayMissing === 0 ? 'badge-green' : 'badge-yellow'}">约${dayRate}% / 精${dayPrecisionRate}%</span>
                     </div>
@@ -1530,6 +1736,7 @@
 
             if (missing.length === 0) {
                 resultWrap.innerHTML = `
+                    ${renderPeriodRoiDashboard()}
                     ${renderPeriodAccurateCopyBlock()}
                     ${renderPeriodAccurateMissingCopyBlock()}
                     <div class="empty-panel">
@@ -1539,18 +1746,80 @@
                     ${renderPeriodDetailTable()}
                     <div class="daily-breakdown">${breakdownHtml}</div>
                 `;
-                document.getElementById('periodHint').innerText = `${startDate} 到 ${endDate} 没有未约人员，精准 ${accurate.length} 人。`;
+                document.getElementById('periodHint').innerText = `${startDate} 到 ${endDate} 没有未约人员，精准 ${accurate.length} 人，ROI ${formatRoi(totalDealAmount, totalSpendAmount)}。`;
                 return;
             }
 
             resultWrap.innerHTML = `
+                ${renderPeriodRoiDashboard()}
                 ${renderPeriodMissingCopyBlock()}
                 ${renderPeriodAccurateMissingCopyBlock()}
                 ${renderPeriodAccurateCopyBlock()}
                 ${renderPeriodDetailTable()}
                 <div class="daily-breakdown">${breakdownHtml}</div>
             `;
-            document.getElementById('periodHint').innerText = `${startDate} 到 ${endDate} 共有 ${missing.length} 人未约，精准 ${accurate.length} 人，其中精准但未约 ${accurateMissing.length} 人。`;
+            document.getElementById('periodHint').innerText = `${startDate} 到 ${endDate} 共有 ${missing.length} 人未约，精准 ${accurate.length} 人，其中精准但未约 ${accurateMissing.length} 人，ROI ${formatRoi(totalDealAmount, totalSpendAmount)}。`;
+        }
+
+        function getDateList(startDate, endDate) {
+            const dates = [];
+            const cursor = new Date(`${startDate}T00:00:00`);
+            const end = new Date(`${endDate}T00:00:00`);
+            while (cursor <= end) {
+                dates.push(cursor.toISOString().split('T')[0]);
+                cursor.setDate(cursor.getDate() + 1);
+            }
+            return dates;
+        }
+
+        function renderPeriodRoiDashboard() {
+            if (!currentPeriodState) return '';
+            const { startDate, endDate, records, dealClosed, totalDealAmount, totalSpendAmount, grouped } = currentPeriodState;
+            const dates = getDateList(startDate, endDate);
+            const rows = dates.map(date => {
+                const dayRecords = grouped[date] || [];
+                const dayDealAmount = dayRecords.reduce((sum, item) => sum + (item.dealClosed ? parseAmount(item.dealAmount) : 0), 0);
+                const daySpendAmount = parseAmount(dailyMetrics[date] && dailyMetrics[date].spendAmount);
+                return `
+                    <tr>
+                        <td>${escapeHtml(date)}</td>
+                        <td class="text-right">${formatMoney(dayDealAmount)}</td>
+                        <td class="text-right">${formatMoney(daySpendAmount)}</td>
+                        <td class="text-right">${formatRoi(dayDealAmount, daySpendAmount)}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            return `
+                <div class="copy-panel">
+                    <div class="copy-panel-head">
+                        <div>
+                            <div class="copy-title">${startDate} 到 ${endDate} ROI 看板</div>
+                            <div class="text-sm text-gray">成交绑定客户，消耗按天录入。</div>
+                        </div>
+                    </div>
+                    <div class="stats-row">
+                        <div class="stat-tile"><span class="stat-value">${dealClosed.length}</span><span class="stat-label">成交人数</span></div>
+                        <div class="stat-tile"><span class="stat-value">${formatMoney(totalDealAmount)}</span><span class="stat-label">周期成交金额</span></div>
+                        <div class="stat-tile"><span class="stat-value">${formatMoney(totalSpendAmount)}</span><span class="stat-label">周期消耗金额</span></div>
+                        <div class="stat-tile"><span class="stat-value">${formatRoi(totalDealAmount, totalSpendAmount)}</span><span class="stat-label">周期ROI</span></div>
+                    </div>
+                    <div class="table-wrap mt-3">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>日期</th>
+                                    <th class="text-right">客户成交金额</th>
+                                    <th class="text-right">每日消耗金额</th>
+                                    <th class="text-right">ROI</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>
+                    <div class="mt-2 text-sm text-gray">本周期 ${records.length} 个 +V 客户中，已成交 ${dealClosed.length} 人。</div>
+                </div>
+            `;
         }
 
         function renderPeriodDetailTable() {
@@ -1566,6 +1835,8 @@
                         <td>${item.phoneBooked ? '<span class="badge badge-green">已约电话</span>' : '<span class="badge badge-red">未约电话</span>'}</td>
                         <td>${item.formSubmitted ? '<span class="badge badge-green">已填表单</span>' : '<span class="badge badge-red">未填表单</span>'}</td>
                         <td><span class="badge badge-yellow">${getTrackingLabel(item.trackingStatus)}</span></td>
+                        <td>${item.dealClosed ? '<span class="badge badge-green">已成交</span>' : '<span class="badge badge-red">未成交</span>'}</td>
+                        <td class="text-right">${formatMoney(item.dealAmount)}</td>
                         <td class="text-right">${isBooked(item) ? '<span class="badge badge-green">已约</span>' : '<span class="badge badge-red">未约</span>'}</td>
                     </tr>
                 `).join('');
@@ -1581,6 +1852,8 @@
                                 <th>是否约上电话</th>
                                 <th>是否填表单</th>
                                 <th>是否追踪</th>
+                                <th>是否成交</th>
+                                <th class="text-right">成交金额</th>
                                 <th class="text-right">统计口径</th>
                             </tr>
                         </thead>
@@ -1791,6 +2064,8 @@
                         phoneBooked: false,
                         formSubmitted: false,
                         trackingStatus: 'untracked',
+                        dealClosed: false,
+                        dealAmount: 0,
                         formFilled: false,
                         timestamp: now,
                         updatedAt: new Date(now).toISOString()
@@ -1842,12 +2117,15 @@
                         <div>电话: ${exactMatch.phoneBooked ? '<span class="badge badge-green">已约电话</span>' : '<span class="badge badge-red">未约电话</span>'}</div>
                         <div>表单: ${exactMatch.formSubmitted ? '<span class="badge badge-green">已填表单</span>' : '<span class="badge badge-red">未填表单</span>'}</div>
                         <div>追踪: <span class="badge badge-yellow">${getTrackingLabel(exactMatch.trackingStatus)}</span></div>
+                        <div>成交: ${exactMatch.dealClosed ? '<span class="badge badge-green">已成交</span>' : '<span class="badge badge-red">未成交</span>'} · ${formatMoney(exactMatch.dealAmount)}</div>
                         <div>是否精准: ${getPrecisionBadge(exactMatch.precisionStatus)}</div>
                     </div>
                     ${renderPrecisionSelect(exactMatch.id, exactMatch.precisionStatus, 'inline-select')}
                     ${renderBookingSelect(exactMatch.id, 'phoneBooked', exactMatch.phoneBooked, '已约电话', '未约电话', 'inline-select')}
                     ${renderBookingSelect(exactMatch.id, 'formSubmitted', exactMatch.formSubmitted, '已填表单', '未填表单', 'inline-select')}
                     ${renderTrackingSelect(exactMatch.id, exactMatch.trackingStatus, 'inline-select')}
+                    ${renderDealSelect(exactMatch.id, exactMatch.dealClosed, 'inline-select')}
+                    <div class="mt-2">${renderDealAmountInput(exactMatch.id, exactMatch.dealAmount)}</div>
                 `;
                 
                 if (similarMatches.length > 0) {
@@ -1864,11 +2142,14 @@
                             &nbsp;&nbsp;统计: ${isBooked(m) ? '<span class="badge badge-green">已约</span>' : '<span class="badge badge-red">未约</span>'}
                             &nbsp;&nbsp;是否精准: ${getPrecisionBadge(m.precisionStatus)}
                             &nbsp;&nbsp;追踪: <span class="badge badge-yellow">${getTrackingLabel(m.trackingStatus)}</span>
+                            &nbsp;&nbsp;成交: ${m.dealClosed ? '<span class="badge badge-green">已成交</span>' : '<span class="badge badge-red">未成交</span>'} · ${formatMoney(m.dealAmount)}
                         </div>
                         ${renderPrecisionSelect(m.id, m.precisionStatus, 'inline-select')}
                         ${renderBookingSelect(m.id, 'phoneBooked', m.phoneBooked, '已约电话', '未约电话', 'inline-select')}
                         ${renderBookingSelect(m.id, 'formSubmitted', m.formSubmitted, '已填表单', '未填表单', 'inline-select')}
                         ${renderTrackingSelect(m.id, m.trackingStatus, 'inline-select')}
+                        ${renderDealSelect(m.id, m.dealClosed, 'inline-select')}
+                        <div class="mt-2">${renderDealAmountInput(m.id, m.dealAmount)}</div>
                     </div>
                 `).join('');
                 
@@ -1923,6 +2204,8 @@
                     <td>${renderBookingSelect(item.id, 'phoneBooked', item.phoneBooked, '已约电话', '未约电话')}</td>
                     <td>${renderBookingSelect(item.id, 'formSubmitted', item.formSubmitted, '已填表单', '未填表单')}</td>
                     <td>${renderTrackingSelect(item.id, item.trackingStatus)}</td>
+                    <td>${renderDealSelect(item.id, item.dealClosed)}</td>
+                    <td>${renderDealAmountInput(item.id, item.dealAmount)}</td>
                     <td style="text-align: right;">
                         <button onclick="deleteItem('${item.id.replace(/'/g, "\\'")}')" class="btn-sm bg-red-light">删除</button>
                     </td>
@@ -1998,6 +2281,40 @@
             }
         }
 
+        function updateDealClosedById(encodedId, value) {
+            const id = decodeURIComponent(encodedId || '');
+            const index = db.findIndex(item => item.id === id);
+            if (index === -1) return;
+
+            const nextValue = value === 'true';
+            if (!!db[index].dealClosed === nextValue) return;
+
+            pushUndo(`修改是否成交：${db[index].id}`);
+            db[index].dealClosed = nextValue;
+            if (!nextValue) db[index].dealAmount = 0;
+            touchRecord(db[index]);
+            saveDb();
+            refreshViews();
+            searchData();
+        }
+
+        function updateDealAmountById(encodedId, value) {
+            const id = decodeURIComponent(encodedId || '');
+            const index = db.findIndex(item => item.id === id);
+            if (index === -1) return;
+
+            const nextAmount = parseAmount(value);
+            if (parseAmount(db[index].dealAmount) === nextAmount) return;
+
+            pushUndo(`修改成交金额：${db[index].id}`);
+            db[index].dealAmount = nextAmount;
+            db[index].dealClosed = nextAmount > 0;
+            touchRecord(db[index]);
+            saveDb();
+            refreshViews();
+            searchData();
+        }
+
         function deleteItem(id) {
             if(confirm(`确定要删除ID "${id}" 的记录吗？`)) {
                 pushUndo(`删除记录：${id}`);
@@ -2020,7 +2337,7 @@
         function exportData() {
             if (db.length === 0) { alert("没有数据可导出！"); return; }
             let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-            csvContent += "微信ID,+V日期,是否精准,是否约上电话,是否填表单,是否追踪\n";
+            csvContent += "微信ID,+V日期,是否精准,是否约上电话,是否填表单,是否追踪,是否成交,成交金额\n";
             db.forEach(item => {
                 let id = (item.id || "").replace(/,/g, "，");
                 let date = item.date || "";
@@ -2028,7 +2345,9 @@
                 let phoneStatus = item.phoneBooked ? "已约电话" : "未约电话";
                 let formStatus = item.formSubmitted ? "已填表单" : "未填表单";
                 let trackingStatus = getTrackingLabel(item.trackingStatus);
-                csvContent += `${id},${date},${precision},${phoneStatus},${formStatus},${trackingStatus}\n`;
+                let dealStatus = item.dealClosed ? "已成交" : "未成交";
+                let dealAmount = parseAmount(item.dealAmount);
+                csvContent += `${id},${date},${precision},${phoneStatus},${formStatus},${trackingStatus},${dealStatus},${dealAmount}\n`;
             });
             const encodedUri = encodeURI(csvContent);
             const link = document.createElement("a");
@@ -2059,10 +2378,14 @@
                         const fourthValue = parts.length > 3 ? parts[3].trim() : '';
                         const fifthValue = parts.length > 4 ? parts[4].trim() : '';
                         const sixthValue = parts.length > 5 ? parts[5].trim() : '';
+                        const seventhValue = parts.length > 6 ? parts[6].trim() : '';
+                        const eighthValue = parts.length > 7 ? parts[7].trim() : '';
                         const legacyBooked = fourthValue.includes('已约') || fourthValue.includes('已填');
                         const phoneBooked = fourthValue.includes('已约电话') || fourthValue === '是';
                         const formSubmitted = fifthValue ? (fifthValue.includes('已填') || fifthValue === '是') : legacyBooked;
                         const trackingStatus = parseTrackingStatus(sixthValue);
+                        const dealAmount = parseAmount(eighthValue);
+                        const dealClosed = seventhValue ? parseStatusBool(seventhValue) || dealAmount > 0 : dealAmount > 0;
                         const formFilled = phoneBooked || formSubmitted || legacyBooked;
                         if (wxId) {
                             const idx = db.findIndex(item => item.id === wxId);
@@ -2073,11 +2396,13 @@
                                 if(parts.length > 3 && !!db[idx].phoneBooked !== phoneBooked) { db[idx].phoneBooked = phoneBooked; changed = true; }
                                 if(parts.length > 3 && !!db[idx].formSubmitted !== formSubmitted) { db[idx].formSubmitted = formSubmitted; changed = true; }
                                 if(parts.length > 5 && getTrackingValue(db[idx].trackingStatus) !== trackingStatus) { db[idx].trackingStatus = trackingStatus; changed = true; }
+                                if(parts.length > 6 && !!db[idx].dealClosed !== dealClosed) { db[idx].dealClosed = dealClosed; changed = true; }
+                                if(parts.length > 7 && parseAmount(db[idx].dealAmount) !== dealAmount) { db[idx].dealAmount = dealAmount; changed = true; }
                                 syncBookedFlag(db[idx]);
                                 if(changed) { touchRecord(db[idx]); updatedCount++; }
                             } else {
                                 const now = Date.now();
-                                db.push({ id: wxId, date: vDate, precisionStatus, phoneBooked, formSubmitted, trackingStatus, formFilled, timestamp: now, updatedAt: new Date(now).toISOString() });
+                                db.push({ id: wxId, date: vDate, precisionStatus, phoneBooked, formSubmitted, trackingStatus, dealClosed, dealAmount, formFilled, timestamp: now, updatedAt: new Date(now).toISOString() });
                                 importedCount++;
                             }
                         }
