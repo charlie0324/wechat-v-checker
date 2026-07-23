@@ -61,13 +61,8 @@ async function saveState(payload) {
   };
 }
 
-exports.main = async (event = {}, context = {}) => {
-  const cloudContext = cloudbase.getCloudbaseContext(context);
+exports.main = async (event = {}) => {
   const action = event.action || 'load';
-
-  if (!cloudContext.OPENID && !cloudContext.UNIONID) {
-    throw new Error('请先使用团队账号登录。');
-  }
 
   if (action === 'load') return loadState();
   if (action === 'save') return saveState(event.payload);
