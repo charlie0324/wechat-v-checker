@@ -1,0 +1,14 @@
+{
+  "$schema": "https://static.cloudbase.net/cli/cloudbaserc.schema.json",
+  "envId": "youareenough-d2g7e94w5105cdc05",
+  "functionRoot": "functions",
+  "functions": [
+    {
+      "name": "wechatCheckerSync",
+      "timeout": 10,
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "description": "Team sync endpoint for wechat-v-checker"
+    }
+  ]
+}
