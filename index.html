@@ -260,9 +260,12 @@
                         <div class="title-left">📚 本地数据库</div>
                         <div class="action-bar">
                             <input type="file" id="importInput" accept=".csv" class="hidden" onchange="importData(event)">
+                            <input type="file" id="importFullInput" accept=".json,application/json" class="hidden" onchange="importFullDataPackage(event)">
                             <button onclick="undoLastAction()" class="btn-sm bg-blue-light">↶ 撤回</button>
                             <button onclick="document.getElementById('importInput').click()" class="btn-sm bg-blue-light">📥 导入</button>
                             <button onclick="exportData()" class="btn-sm bg-green-light">📤 导出</button>
+                            <button onclick="exportFullDataPackage()" class="btn-sm bg-green-light">全量JSON</button>
+                            <button onclick="document.getElementById('importFullInput').click()" class="btn-sm bg-blue-light">导入JSON</button>
                             <button onclick="clearData()" class="btn-sm bg-red-light">清空</button>
                         </div>
                     </div>
@@ -2356,6 +2359,77 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+        }
+
+        function buildFullDataPackage() {
+            return {
+                _id: 'main',
+                schemaVersion: 2,
+                app: 'wechat-v-checker',
+                recommendedCloudBaseCollection: 'wechat_checker_state',
+                exportedAt: new Date().toISOString(),
+                data: db.map(normalizeRecord),
+                metrics: getDailyMetricsArray().map(normalizeDailyMetric),
+                meta: {
+                    recordCount: db.length,
+                    metricCount: Object.keys(dailyMetrics).length,
+                    dbDateFilter,
+                    lastUploadAt: cloudSyncMeta.lastUploadAt || '',
+                    lastBidirectionalSyncAt: cloudSyncMeta.lastBidirectionalSyncAt || ''
+                }
+            };
+        }
+
+        function downloadTextFile(filename, text, mimeType) {
+            const blob = new Blob([text], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        function exportFullDataPackage() {
+            const payload = buildFullDataPackage();
+            const filename = `wechat-v-checker-full-${today}.json`;
+            downloadTextFile(filename, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+            alert(`已导出全量数据包：${payload.meta.recordCount} 条名单，${payload.meta.metricCount} 天消耗。`);
+        }
+
+        function importFullDataPackage(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const payload = JSON.parse(e.target.result || '{}');
+                    const records = Array.isArray(payload.data) ? payload.data : [];
+                    const metrics = Array.isArray(payload.metrics) ? payload.metrics : [];
+                    if (payload.app && payload.app !== 'wechat-v-checker') {
+                        throw new Error('这个 JSON 文件不是 +V 核对工具导出的数据包。');
+                    }
+                    if (!records.length && !metrics.length) {
+                        throw new Error('这个 JSON 文件里没有可导入的名单或消耗数据。');
+                    }
+                    if (!confirm(`确认导入这个全量数据包吗？\n名单 ${records.length} 条，消耗 ${metrics.length} 天。\n导入会覆盖当前本地名单和每日消耗。`)) return;
+
+                    pushUndo(`导入全量 JSON：${file.name}`);
+                    db = records.map(normalizeRecord).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                    dailyMetrics = normalizeDailyMetricsMap(metrics);
+                    saveDb();
+                    saveDailyMetrics(true);
+                    refreshViews();
+                    alert(`导入完成：${db.length} 条名单，${Object.keys(dailyMetrics).length} 天消耗。`);
+                } catch (error) {
+                    alert(`导入失败：${error.message}`);
+                } finally {
+                    event.target.value = '';
+                }
+            };
+            reader.readAsText(file, 'UTF-8');
         }
 
         function importData(event) {
