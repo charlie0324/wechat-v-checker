@@ -170,17 +170,36 @@
                 <div class="title-left">
                     <span class="step-icon green">☁</span> 云同步
                 </div>
-                <span class="text-xs text-gray">Google Sheets 作为后台数据库</span>
+                <span class="text-xs text-gray">CloudBase 作为后台数据库</span>
             </div>
 
             <div class="sync-grid">
                 <div class="form-group">
-                    <label>Google Apps Script 接口地址</label>
-                    <input type="text" id="cloudUrlInput" placeholder="粘贴部署后的 Web App URL">
+                    <label>CloudBase 环境 ID</label>
+                    <input type="text" id="cloudEnvInput" placeholder="CloudBase envId">
                 </div>
                 <div class="form-group">
-                    <label>同步密钥</label>
-                    <input type="password" id="cloudSecretInput" placeholder="自己设置一串密码">
+                    <label>集合名</label>
+                    <input type="text" id="cloudCollectionInput" placeholder="wechat_checker_state">
+                </div>
+                <div class="form-group">
+                    <label>文档 ID</label>
+                    <input type="text" id="cloudDocInput" placeholder="main">
+                </div>
+                <div class="form-group">
+                    <label>登录方式</label>
+                    <select id="cloudAuthTypeInput" onchange="updateCloudAuthFields(); saveCloudSettings(false);">
+                        <option value="anonymous">匿名登录</option>
+                        <option value="password">邮箱密码登录</option>
+                    </select>
+                </div>
+                <div class="form-group cloud-password-field hidden">
+                    <label>登录账号</label>
+                    <input type="text" id="cloudUsernameInput" placeholder="CloudBase 用户邮箱或账号">
+                </div>
+                <div class="form-group cloud-password-field hidden">
+                    <label>登录密码</label>
+                    <input type="password" id="cloudPasswordInput" placeholder="CloudBase 用户密码">
                 </div>
             </div>
 
@@ -198,7 +217,7 @@
                 </label>
                 <label class="toggle-row">
                     <input type="checkbox" id="cloudPeriodicSyncInput" onchange="saveCloudSettings(false)">
-                    每 5 分钟自动拉取并上传
+                    每 30 秒自动拉取并上传
                 </label>
             </div>
             <div id="cloudSyncStatus" class="sync-status text-sm mt-2">未配置云同步。</div>
@@ -419,6 +438,7 @@
     </div>
 
     <!-- 逻辑代码 -->
+    <script src="https://static.cloudbase.net/cloudbase-js-sdk/2.28.6/cloudbase.full.js"></script>
     <script>
         // 初始化：设置今日日期
         const today = new Date().toISOString().split('T')[0];
@@ -435,12 +455,26 @@
         let currentMissingState = null;
         let currentPeriodState = null;
         let undoStack = JSON.parse(localStorage.getItem('wechat_tracker_undo_stack')) || [];
-        let cloudConfig = JSON.parse(localStorage.getItem('wechat_tracker_cloud_config')) || { url: '', secret: '', autoSync: false, periodicSync: false };
+        const DEFAULT_CLOUDBASE_CONFIG = {
+            provider: 'cloudbase',
+            envId: 'youareenough-d2g7e94w5105cdc05',
+            collection: 'wechat_checker_state',
+            docId: 'main',
+            authType: 'anonymous',
+            username: '',
+            password: '',
+            autoSync: false,
+            periodicSync: false
+        };
+        let cloudConfig = normalizeCloudConfig(JSON.parse(localStorage.getItem('wechat_tracker_cloud_config')) || {});
         let cloudSyncMeta = JSON.parse(localStorage.getItem('wechat_tracker_cloud_sync_meta')) || { lastUploadAt: '', lastBidirectionalSyncAt: '' };
         let cloudPushTimer = null;
         let cloudPeriodicTimer = null;
         let isCloudSyncing = false;
-        const CLOUD_PERIODIC_SYNC_MS = 5 * 60 * 1000;
+        let cloudBaseApp = null;
+        let cloudBaseAuthReady = null;
+        let cloudBaseConfigKey = '';
+        const CLOUD_PERIODIC_SYNC_MS = 30 * 1000;
 
         // 页面加载完成后渲染表格
         window.onload = () => {
@@ -782,35 +816,70 @@
             alert(`已保存 ${date} 消耗：${formatMoney(spendAmount)}。`);
         }
 
+        function normalizeCloudConfig(value) {
+            const raw = value || {};
+            const legacyUrl = String(raw.url || '').trim();
+            const envIdFromLegacy = legacyUrl && !legacyUrl.includes('script.google.com') ? legacyUrl : '';
+            return {
+                ...DEFAULT_CLOUDBASE_CONFIG,
+                provider: 'cloudbase',
+                envId: String(raw.envId || envIdFromLegacy || DEFAULT_CLOUDBASE_CONFIG.envId).trim(),
+                collection: String(raw.collection || DEFAULT_CLOUDBASE_CONFIG.collection).trim(),
+                docId: String(raw.docId || DEFAULT_CLOUDBASE_CONFIG.docId).trim(),
+                authType: raw.authType === 'password' ? 'password' : 'anonymous',
+                username: String(raw.username || '').trim(),
+                password: String(raw.password || ''),
+                autoSync: !!raw.autoSync,
+                periodicSync: !!raw.periodicSync
+            };
+        }
+
         function loadCloudSettingsToForm() {
-            document.getElementById('cloudUrlInput').value = cloudConfig.url || '';
-            document.getElementById('cloudSecretInput').value = cloudConfig.secret || '';
+            cloudConfig = normalizeCloudConfig(cloudConfig);
+            document.getElementById('cloudEnvInput').value = cloudConfig.envId || DEFAULT_CLOUDBASE_CONFIG.envId;
+            document.getElementById('cloudCollectionInput').value = cloudConfig.collection || DEFAULT_CLOUDBASE_CONFIG.collection;
+            document.getElementById('cloudDocInput').value = cloudConfig.docId || DEFAULT_CLOUDBASE_CONFIG.docId;
+            document.getElementById('cloudAuthTypeInput').value = cloudConfig.authType || 'anonymous';
+            document.getElementById('cloudUsernameInput').value = cloudConfig.username || '';
+            document.getElementById('cloudPasswordInput').value = cloudConfig.password || '';
             document.getElementById('cloudAutoSyncInput').checked = !!cloudConfig.autoSync;
             document.getElementById('cloudPeriodicSyncInput').checked = !!cloudConfig.periodicSync;
+            updateCloudAuthFields();
             setCloudStatus(getCloudConfigStatusText());
             setupPeriodicCloudSync();
         }
 
+        function updateCloudAuthFields() {
+            const authType = document.getElementById('cloudAuthTypeInput').value;
+            document.querySelectorAll('.cloud-password-field').forEach(el => {
+                el.classList.toggle('hidden', authType !== 'password');
+            });
+        }
+
         function saveCloudSettings(showAlert = true) {
-            cloudConfig = {
-                url: document.getElementById('cloudUrlInput').value.trim(),
-                secret: document.getElementById('cloudSecretInput').value.trim(),
+            cloudConfig = normalizeCloudConfig({
+                envId: document.getElementById('cloudEnvInput').value,
+                collection: document.getElementById('cloudCollectionInput').value,
+                docId: document.getElementById('cloudDocInput').value,
+                authType: document.getElementById('cloudAuthTypeInput').value,
+                username: document.getElementById('cloudUsernameInput').value,
+                password: document.getElementById('cloudPasswordInput').value,
                 autoSync: document.getElementById('cloudAutoSyncInput').checked,
                 periodicSync: document.getElementById('cloudPeriodicSyncInput').checked
-            };
+            });
             localStorage.setItem('wechat_tracker_cloud_config', JSON.stringify(cloudConfig));
             setupPeriodicCloudSync();
-            setCloudStatus(cloudConfig.url ? getCloudConfigStatusText('同步设置已保存。') : '请先填写 Google Apps Script 接口地址。');
+            setCloudStatus(cloudConfig.envId ? getCloudConfigStatusText('同步设置已保存。') : '请先填写 CloudBase 环境 ID。');
             if (showAlert) alert("云同步设置已保存。");
         }
 
         function getCloudConfigStatusText(prefix = '') {
-            if (!cloudConfig.url) return '未配置云同步。';
+            if (!cloudConfig.envId) return '未配置云同步。';
             const pieces = [];
             if (prefix) pieces.push(prefix);
-            pieces.push('云同步已配置');
+            pieces.push(`CloudBase 已配置：${cloudConfig.envId}`);
             if (cloudConfig.autoSync) pieces.push('本地改动会自动上传');
-            if (cloudConfig.periodicSync) pieces.push('每 5 分钟会自动拉取并上传');
+            if (cloudConfig.periodicSync) pieces.push('每 30 秒会自动拉取并上传');
             return `${pieces.join('，')}。`;
         }
 
@@ -819,25 +888,10 @@
                 clearInterval(cloudPeriodicTimer);
                 cloudPeriodicTimer = null;
             }
-            if (!cloudConfig.periodicSync || !cloudConfig.url || !cloudConfig.secret) return;
+            if (!cloudConfig.periodicSync || !cloudConfig.envId) return;
             cloudPeriodicTimer = setInterval(() => {
                 syncCloudData(true);
             }, CLOUD_PERIODIC_SYNC_MS);
-        }
-
-        function isGoogleAppsScriptUrl(url) {
-            return /^https:\/\/script\.google\.com\/macros\/s\//i.test(url || '');
-        }
-
-        function getCloudUrlIssue() {
-            if (!cloudConfig.url) return '';
-            if (isGoogleAppsScriptUrl(cloudConfig.url) && /\/dev(?:\?|$)/i.test(cloudConfig.url)) {
-                return '你现在填的是 /dev 测试链接。其他电脑通常不能访问，请在 Apps Script 里“部署 -> 管理部署”复制结尾是 /exec 的 Web App URL。';
-            }
-            if (isGoogleAppsScriptUrl(cloudConfig.url) && !/\/exec(?:\?|$)/i.test(cloudConfig.url)) {
-                return '这个地址不像正式 Web App URL。请复制 Apps Script 部署后的 Web App URL，正常应该以 /exec 结尾。';
-            }
-            return '';
         }
 
         function setCloudStatus(message, type = 'normal') {
@@ -876,115 +930,135 @@
 
         function requireCloudConfig(showAlert = true) {
             saveCloudSettings(false);
-            if (!cloudConfig.url || !cloudConfig.secret) {
-                setCloudStatus('请先填写接口地址和同步密钥。', 'error');
-                if (showAlert) alert("请先填写接口地址和同步密钥。");
+            if (!cloudConfig.envId || !cloudConfig.collection || !cloudConfig.docId) {
+                setCloudStatus('请先填写 CloudBase 环境 ID、集合名和文档 ID。', 'error');
+                if (showAlert) alert("请先填写 CloudBase 环境 ID、集合名和文档 ID。");
                 return false;
             }
-            const issue = getCloudUrlIssue();
-            if (issue) {
-                setCloudStatus(issue, 'error');
-                if (showAlert) alert(issue);
+            if (cloudConfig.authType === 'password' && (!cloudConfig.username || !cloudConfig.password)) {
+                setCloudStatus('邮箱密码登录需要填写账号和密码。', 'error');
+                if (showAlert) alert("邮箱密码登录需要填写账号和密码。");
                 return false;
             }
             return true;
         }
 
-        function getCloudUrl(action = '') {
-            if (!action) return cloudConfig.url;
-            const separator = cloudConfig.url.includes('?') ? '&' : '?';
-            return `${cloudConfig.url}${separator}action=${encodeURIComponent(action)}&secret=${encodeURIComponent(cloudConfig.secret)}`;
-        }
-
-        function getCloudUrlWithParams(params) {
-            const query = Object.keys(params)
-                .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
-                .join('&');
-            const separator = cloudConfig.url.includes('?') ? '&' : '?';
-            return `${cloudConfig.url}${separator}${query}`;
-        }
-
-        async function readCloudResponse(response) {
-            const text = await response.text();
-            try {
-                return JSON.parse(text);
-            } catch (error) {
-                throw new Error(text || '云端返回不是 JSON，请检查 Apps Script 是否部署为 Web App。');
-            }
-        }
-
-        async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), timeoutMs);
-            try {
-                return await fetch(url, { ...options, signal: controller.signal });
-            } finally {
-                clearTimeout(timeout);
-            }
-        }
-
-        async function loadCloudDataFetch() {
-            const response = await fetchWithTimeout(getCloudUrl('load'), {
-                method: 'GET',
-                cache: 'no-store'
-            }, 12000);
-            return readCloudResponse(response);
-        }
-
         function queueCloudPush() {
-            if (!cloudConfig.url || !cloudConfig.secret || isCloudSyncing) return;
+            if (!cloudConfig.envId || isCloudSyncing) return;
             clearTimeout(cloudPushTimer);
             cloudPushTimer = setTimeout(() => {
                 pushCloudData(true);
             }, 900);
         }
 
-        async function uploadCloudPayload(payload) {
-            try {
-                const response = await fetch(getCloudUrl(), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: payload
-                });
-                const result = await readCloudResponse(response);
-                if (!result.ok) throw new Error(result.error || '云端保存失败');
-                if (typeof result.count !== 'number') throw new Error('云端没有确认保存，请重新部署最新版 Apps Script。');
-                return { confirmed: true, count: result.count };
-            } catch (error) {
-                console.warn('标准上传失败，尝试兼容模式:', error);
-                await fetch(getCloudUrl(), {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: payload
-                });
-                return { confirmed: false, count: db.length };
+        function getCloudBaseConfigKey() {
+            return [
+                cloudConfig.envId,
+                cloudConfig.authType,
+                cloudConfig.username
+            ].join('|');
+        }
+
+        async function getCloudBaseApp() {
+            if (!window.cloudbase) {
+                throw new Error('CloudBase SDK 加载失败，请检查网络，或确认浏览器能访问 static.cloudbase.net。');
             }
+
+            const nextKey = getCloudBaseConfigKey();
+            if (!cloudBaseApp || cloudBaseConfigKey !== nextKey) {
+                cloudBaseApp = window.cloudbase.init({
+                    env: cloudConfig.envId
+                });
+                cloudBaseAuthReady = null;
+                cloudBaseConfigKey = nextKey;
+            }
+
+            const auth = typeof cloudBaseApp.auth === 'function' ? cloudBaseApp.auth() : cloudBaseApp.auth;
+            if (!cloudBaseAuthReady) {
+                cloudBaseAuthReady = (async () => {
+                    if (cloudConfig.authType === 'password') {
+                        let result;
+                        if (typeof auth.signInWithPassword === 'function') {
+                            result = await auth.signInWithPassword({
+                                username: cloudConfig.username,
+                                password: cloudConfig.password
+                            });
+                        } else if (typeof auth.signInWithEmailAndPassword === 'function') {
+                            result = await auth.signInWithEmailAndPassword(cloudConfig.username, cloudConfig.password);
+                        } else {
+                            throw new Error('当前 CloudBase SDK 不支持邮箱密码登录，请改用匿名登录或检查 SDK 版本。');
+                        }
+                        if (result && result.error) throw result.error;
+                        return result;
+                    }
+                    if (typeof auth.signInAnonymously !== 'function') {
+                        throw new Error('当前 CloudBase SDK 不支持匿名登录，请检查 SDK 是否加载成功。');
+                    }
+                    const result = await auth.signInAnonymously();
+                    if (result && result.error) throw result.error;
+                    return result;
+                })().catch(error => {
+                    cloudBaseAuthReady = null;
+                    throw error;
+                });
+            }
+            await cloudBaseAuthReady;
+            return cloudBaseApp;
+        }
+
+        function getCloudBaseCollection(app) {
+            return app.database().collection(cloudConfig.collection);
+        }
+
+        function buildCloudBaseStatePayload() {
+            return {
+                schemaVersion: 2,
+                app: 'wechat-v-checker',
+                data: db.map(normalizeRecord),
+                metrics: getDailyMetricsArray().map(normalizeDailyMetric),
+                updatedAt: new Date().toISOString()
+            };
+        }
+
+        async function loadCloudData() {
+            const app = await getCloudBaseApp();
+            try {
+                const result = await getCloudBaseCollection(app).doc(cloudConfig.docId).get();
+                const doc = Array.isArray(result.data) ? result.data[0] : result.data;
+                if (!doc) return { ok: true, data: [], metrics: [], updatedAt: '' };
+                return {
+                    ok: true,
+                    data: Array.isArray(doc.data) ? doc.data : [],
+                    metrics: Array.isArray(doc.metrics) ? doc.metrics : [],
+                    updatedAt: doc.updatedAt || ''
+                };
+            } catch (error) {
+                const message = String(error && (error.message || error.errMsg || error));
+                if (message.includes('not exist') || message.includes('not found') || message.includes('DOCUMENT_NOT_EXIST')) {
+                    return { ok: true, data: [], metrics: [], updatedAt: '' };
+                }
+                throw error;
+            }
+        }
+
+        async function uploadCloudPayload() {
+            const app = await getCloudBaseApp();
+            const payload = buildCloudBaseStatePayload();
+            await getCloudBaseCollection(app).doc(cloudConfig.docId).set(payload);
+            return { confirmed: true, count: payload.data.length, metricCount: payload.metrics.length };
         }
 
         async function pushCloudData(silent = false) {
             if (!requireCloudConfig(!silent)) return;
             if (isCloudSyncing) return;
             isCloudSyncing = true;
-            if (!silent) setCloudStatus('正在上传到云端...');
-
-            const payload = JSON.stringify({
-                secret: cloudConfig.secret,
-                data: db,
-                metrics: getDailyMetricsArray(),
-                updatedAt: new Date().toISOString()
-            });
+            if (!silent) setCloudStatus('正在上传到 CloudBase...');
 
             try {
-                const result = await uploadCloudPayload(payload);
+                await uploadCloudPayload();
                 recordCloudSyncTime('upload');
-                if (result.confirmed) {
-                    setCloudStatus(`已上传 ${db.length} 条名单数据、${Object.keys(dailyMetrics).length} 天金额数据到云端。`, 'success');
-                    if (!silent) alert("已上传到云端。");
-                } else {
-                    setCloudStatus(`已用兼容模式发送 ${db.length} 条数据。浏览器限制下无法读取云端确认。`, 'success');
-                    if (!silent) alert("已用兼容模式发送到云端。建议在另一台设备点“从云端拉取”验证。");
-                }
+                setCloudStatus(`已上传 ${db.length} 条名单数据、${Object.keys(dailyMetrics).length} 天消耗数据到 CloudBase。`, 'success');
+                if (!silent) alert("已上传到 CloudBase。");
             } catch (error) {
                 console.error(error);
                 setCloudStatus(`上传失败：${error.message}`, 'error');
@@ -994,68 +1068,22 @@
             }
         }
 
-        function loadCloudDataJsonp() {
-            return new Promise((resolve, reject) => {
-                const callbackName = `wechatTrackerCloudCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-                const script = document.createElement('script');
-                const timeout = setTimeout(() => {
-                    cleanup();
-                    reject(new Error('Edge 兼容读取超时。请确认 Apps Script 访问权限是“任何知道链接的人”，URL 以 /exec 结尾，并且这台电脑可以访问 script.google.com。'));
-                }, 45000);
-
-                function cleanup() {
-                    clearTimeout(timeout);
-                    delete window[callbackName];
-                    if (script.parentNode) script.parentNode.removeChild(script);
-                }
-
-                window[callbackName] = (result) => {
-                    cleanup();
-                    resolve(result);
-                };
-
-                script.onerror = () => {
-                    cleanup();
-                    reject(new Error('云端脚本加载失败，请检查 Web App URL 和访问权限。'));
-                };
-                script.src = getCloudUrlWithParams({
-                    action: 'load',
-                    secret: cloudConfig.secret,
-                    callback: callbackName
-                });
-                document.body.appendChild(script);
-            });
-        }
-
-        async function loadCloudData() {
-            try {
-                return await loadCloudDataFetch();
-            } catch (fetchError) {
-                console.warn('标准读取失败，尝试 Edge 兼容读取:', fetchError);
-                try {
-                    return await loadCloudDataJsonp();
-                } catch (jsonpError) {
-                    throw new Error(`${jsonpError.message} 标准读取也失败：${fetchError.message}`);
-                }
-            }
-        }
-
         async function testCloudConnection() {
             if (!requireCloudConfig()) return;
             isCloudSyncing = true;
-            setCloudStatus('正在测试云连接...');
+            setCloudStatus('正在测试 CloudBase 连接...');
 
             try {
                 const result = await loadCloudData();
                 if (!result.ok) throw new Error(result.error || '云端连接失败');
                 const count = Array.isArray(result.data) ? result.data.length : 0;
                 const metricCount = Array.isArray(result.metrics) ? result.metrics.length : 0;
-                setCloudStatus(`云连接正常，可以读取 ${count} 条名单数据、${metricCount} 条金额数据。`, 'success');
-                alert(`云连接正常，可以读取 ${count} 条名单数据、${metricCount} 条金额数据。`);
+                setCloudStatus(`CloudBase 连接正常，可以读取 ${count} 条名单数据、${metricCount} 条消耗数据。`, 'success');
+                alert(`CloudBase 连接正常，可以读取 ${count} 条名单数据、${metricCount} 条消耗数据。`);
             } catch (error) {
                 console.error(error);
-                setCloudStatus(`云连接失败：${error.message}`, 'error');
-                alert(`云连接失败：${error.message}`);
+                setCloudStatus(`CloudBase 连接失败：${error.message}`, 'error');
+                alert(`CloudBase 连接失败：${error.message}\n\n请确认：1. charlie0324.github.io 已加入 Web 安全域名；2. 用户管理里的登录方式已开启；3. 数据库集合权限允许当前用户读写。`);
             } finally {
                 isCloudSyncing = false;
             }
@@ -1066,7 +1094,7 @@
             if (isCloudSyncing) return;
 
             isCloudSyncing = true;
-            if (!silent) setCloudStatus('正在双向同步，先拉取云端再上传本地...');
+            if (!silent) setCloudStatus('正在双向同步，先拉取 CloudBase 再上传本地...');
 
             try {
                 const result = await loadCloudData();
@@ -1078,20 +1106,10 @@
                 saveDailyMetrics(true);
                 refreshViews();
 
-                const payload = JSON.stringify({
-                    secret: cloudConfig.secret,
-                    data: db,
-                    metrics: getDailyMetricsArray(),
-                    updatedAt: new Date().toISOString()
-                });
-                const uploadResult = await uploadCloudPayload(payload);
+                await uploadCloudPayload();
                 recordCloudSyncTime('bidirectional');
                 const message = `双向同步完成：名单新增 ${mergeResult.added} 条、更新 ${mergeResult.updated} 条；金额新增 ${metricMergeResult.added} 天、更新 ${metricMergeResult.updated} 天。`;
-                if (uploadResult.confirmed) {
-                    setCloudStatus(message, 'success');
-                } else {
-                    setCloudStatus(`${message} 已用兼容模式上传，浏览器限制下无法读取云端确认。`, 'success');
-                }
+                setCloudStatus(message, 'success');
                 if (!silent) alert(message);
             } catch (error) {
                 console.error(error);
@@ -1104,10 +1122,10 @@
 
         async function pullCloudData() {
             if (!requireCloudConfig()) return;
-            if (db.length > 0 && !confirm("从云端拉取会用云端数据覆盖当前本地数据，确认继续吗？")) return;
+            if (db.length > 0 && !confirm("从 CloudBase 拉取会用云端数据覆盖当前本地数据，确认继续吗？")) return;
 
             isCloudSyncing = true;
-            setCloudStatus('正在从云端拉取...');
+            setCloudStatus('正在从 CloudBase 拉取...');
 
             try {
                 const result = await loadCloudData();
@@ -1119,8 +1137,8 @@
                 saveDb(true);
                 saveDailyMetrics(true);
                 refreshViews();
-                setCloudStatus(`已从云端拉取 ${db.length} 条名单数据、${Object.keys(dailyMetrics).length} 天金额数据。`, 'success');
-                alert("已从云端拉取数据。");
+                setCloudStatus(`已从 CloudBase 拉取 ${db.length} 条名单数据、${Object.keys(dailyMetrics).length} 天消耗数据。`, 'success');
+                alert("已从 CloudBase 拉取数据。");
             } catch (error) {
                 console.error(error);
                 setCloudStatus(`拉取失败：${error.message}`, 'error');
