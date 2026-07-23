@@ -73,8 +73,8 @@ charlie0324.github.io
 如果使用 CloudBase 静态网站托管默认域名，通常不需要再添加 `charlie0324.github.io`。
 
 3. 在用户管理里开启登录方式。工具支持：
+   - 账号密码登录，页面默认使用这一项
    - 匿名登录
-   - 邮箱密码登录
 4. 在数据库里创建集合：
 
 ```text
@@ -86,7 +86,7 @@ wechat_checker_state
    - 环境 ID：`youareenough-d2g7e94w5105cdc05`
    - 集合名：`wechat_checker_state`
    - 文档 ID：`main`
-   - 登录方式：按你的 CloudBase 用户管理配置选择
+   - 登录方式：默认账号密码登录，按你的 CloudBase 用户管理配置填写账号和密码
 7. 第一次使用建议先点击“上传到云端”。
 8. 其他设备打开网页后，填写同样配置，再点击“从云端拉取”或“立即双向同步”。
 
