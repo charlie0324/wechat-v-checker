@@ -963,6 +963,16 @@
             return `${member} ${formatRelativeTime(result.updatedAt)}更新了一次数据。`;
         }
 
+        function getFriendlyErrorMessage(error) {
+            const raw = String(error && (error.message || error.errMsg || error) || '未知错误');
+            try {
+                const parsed = JSON.parse(raw);
+                return parsed.msg || parsed.message || raw;
+            } catch (parseError) {
+                return raw;
+            }
+        }
+
         function renderCloudSyncTimes() {
             const el = document.getElementById('cloudSyncTimeStatus');
             if (!el) return;
@@ -1122,8 +1132,9 @@
                 if (!silent) alert("已上传到 CloudBase。");
             } catch (error) {
                 console.error(error);
-                setCloudStatus(`上传失败：${error.message}`, 'error');
-                if (!silent) alert(`上传失败：${error.message}`);
+                const message = getFriendlyErrorMessage(error);
+                setCloudStatus(`上传失败：${message}`, 'error');
+                if (!silent) alert(`上传失败：${message}`);
             } finally {
                 isCloudSyncing = false;
             }
@@ -1156,8 +1167,9 @@
             } catch (error) {
                 console.error(error);
                 setProtectedAppVisible(false);
-                setCloudStatus(`CloudBase 连接失败：${error.message}`, 'error');
-                alert(`CloudBase 连接失败：${error.message}\n\n请确认：1. 当前 CloudBase 托管域名可以正常打开；2. 用户管理里的账号密码登录已开启；3. 数据库集合权限允许当前用户读写。`);
+                const message = getFriendlyErrorMessage(error);
+                setCloudStatus(`CloudBase 连接失败：${message}`, 'error');
+                alert(`CloudBase 连接失败：${message}\n\n请确认：1. 当前 CloudBase 托管域名可以正常打开；2. 用户管理里的账号密码登录已开启；3. 数据库集合权限允许当前用户读写。`);
             } finally {
                 isCloudSyncing = false;
             }
@@ -1194,8 +1206,9 @@
                 if (!silent) alert(message);
             } catch (error) {
                 console.error(error);
-                setCloudStatus(`双向同步失败：${error.message}`, 'error');
-                if (!silent) alert(`双向同步失败：${error.message}`);
+                const message = getFriendlyErrorMessage(error);
+                setCloudStatus(`同步失败：${message}`, 'error');
+                if (!silent) alert(`同步失败：${message}`);
             } finally {
                 isCloudSyncing = false;
             }
@@ -1226,8 +1239,9 @@
                 alert("已从 CloudBase 拉取数据。");
             } catch (error) {
                 console.error(error);
-                setCloudStatus(`拉取失败：${error.message}`, 'error');
-                alert(`拉取失败：${error.message}`);
+                const message = getFriendlyErrorMessage(error);
+                setCloudStatus(`拉取失败：${message}`, 'error');
+                alert(`拉取失败：${message}`);
             } finally {
                 isCloudSyncing = false;
             }
