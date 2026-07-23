@@ -26,7 +26,13 @@
 
 ## 在线部署
 
-这个项目是静态网页，只需要部署 `index.html`。
+这个项目是静态网页，只需要部署 `index.html`。当前已经部署到 CloudBase 静态网站托管：
+
+```text
+https://youareenough-d2g7e94w5105cdc05-1318648247.tcloudbaseapp.com
+```
+
+这个地址是推荐使用地址，比 GitHub Pages 更适合 CloudBase 同步。
 
 ### GitHub Pages
 
@@ -58,11 +64,13 @@ https://你的用户名.github.io/wechat-v-checker/
 youareenough-d2g7e94w5105cdc05
 ```
 
-2. 在安全来源里添加 Web 安全域名：
+2. 如果使用 GitHub Pages，需要在安全来源里添加 Web 安全域名：
 
 ```text
 charlie0324.github.io
 ```
+
+如果使用 CloudBase 静态网站托管默认域名，通常不需要再添加 `charlie0324.github.io`。
 
 3. 在用户管理里开启登录方式。工具支持：
    - 匿名登录
@@ -73,7 +81,7 @@ charlie0324.github.io
 wechat_checker_state
 ```
 
-5. 给集合配置当前登录用户可读写的权限。
+5. 给集合配置登录用户可读写的权限。如果要多台电脑共享同一个 `main` 文档，建议选择“所有登录用户可读写”这一类模板。
 6. 回到网页顶部“云同步”区域，确认：
    - 环境 ID：`youareenough-d2g7e94w5105cdc05`
    - 集合名：`wechat_checker_state`
