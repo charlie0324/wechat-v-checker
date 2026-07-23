@@ -209,7 +209,7 @@
                     <button onclick="testCloudConnection()" class="btn btn-primary">团队登录</button>
                     <button onclick="pullCloudData()" class="btn btn-primary team-sync-action hidden">从云端拉取</button>
                     <button onclick="pushCloudData()" class="btn btn-success team-sync-action hidden">上传到云端</button>
-                    <button onclick="syncCloudData(false)" class="btn btn-outline team-sync-action hidden">立即双向同步</button>
+                    <button onclick="syncCloudData(false)" class="btn btn-outline team-sync-action hidden">立即同步</button>
                 </div>
                 <label class="toggle-row hidden">
                     <input type="checkbox" id="cloudAutoSyncInput" onchange="saveCloudSettings(false)">
@@ -217,7 +217,7 @@
                 </label>
                 <label class="toggle-row hidden">
                     <input type="checkbox" id="cloudPeriodicSyncInput" onchange="saveCloudSettings(false)">
-                    每 30 秒自动拉取并上传
+                    每 10 秒自动同步
                 </label>
             </div>
             <div id="cloudSyncStatus" class="sync-status text-sm mt-2">未配置云同步。</div>
@@ -474,10 +474,12 @@
         let cloudPeriodicTimer = null;
         let isCloudSyncing = false;
         let isTeamLoggedIn = false;
+        let currentTeamMember = '';
         let cloudBaseApp = null;
         let cloudBaseAuthReady = null;
         let cloudBaseConfigKey = '';
-        const CLOUD_PERIODIC_SYNC_MS = 30 * 1000;
+        let lastCloudStateUpdatedAt = '';
+        const CLOUD_PERIODIC_SYNC_MS = 10 * 1000;
 
         // 页面加载完成后渲染表格
         window.onload = () => {
@@ -909,7 +911,7 @@
             if (prefix) pieces.push(prefix);
             pieces.push(`CloudBase 已配置：${cloudConfig.envId}`);
             if (cloudConfig.autoSync) pieces.push('本地改动会自动上传');
-            if (cloudConfig.periodicSync) pieces.push('每 30 秒会自动拉取并上传');
+            if (cloudConfig.periodicSync) pieces.push('每 10 秒会自动同步');
             return `${pieces.join('，')}。`;
         }
 
@@ -939,6 +941,26 @@
             const dateText = date.toLocaleDateString('zh-CN');
             const timeText = date.toLocaleTimeString('zh-CN', { hour12: false });
             return dateText === todayText ? timeText : `${dateText} ${timeText}`;
+        }
+
+        function formatRelativeTime(value) {
+            if (!value) return '暂无';
+            const time = new Date(value).getTime();
+            if (Number.isNaN(time)) return '暂无';
+            const seconds = Math.max(0, Math.floor((Date.now() - time) / 1000));
+            if (seconds < 10) return '刚刚';
+            if (seconds < 60) return `${seconds} 秒前`;
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes} 分钟前`;
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${hours} 小时前`;
+            return formatSyncTime(value);
+        }
+
+        function getCloudUpdateText(result) {
+            if (!result || !result.updatedAt) return '云端暂无更新记录。';
+            const member = result.updatedBy || '团队成员';
+            return `${member} ${formatRelativeTime(result.updatedAt)}更新了一次数据。`;
         }
 
         function renderCloudSyncTimes() {
@@ -1046,35 +1068,40 @@
                 app: 'wechat-v-checker',
                 data: db.map(normalizeRecord),
                 metrics: getDailyMetricsArray().map(normalizeDailyMetric),
+                updatedBy: currentTeamMember || cloudConfig.username || '团队成员',
                 updatedAt: new Date().toISOString()
             };
         }
 
-        async function loadCloudData() {
+        async function callSyncFunction(action, payload = null) {
             const app = await getCloudBaseApp();
-            try {
-                const result = await getCloudBaseCollection(app).doc(cloudConfig.docId).get();
-                const doc = Array.isArray(result.data) ? result.data[0] : result.data;
-                if (!doc) return { ok: true, data: [], metrics: [], updatedAt: '' };
-                return {
-                    ok: true,
-                    data: Array.isArray(doc.data) ? doc.data : [],
-                    metrics: Array.isArray(doc.metrics) ? doc.metrics : [],
-                    updatedAt: doc.updatedAt || ''
-                };
-            } catch (error) {
-                const message = String(error && (error.message || error.errMsg || error));
-                if (message.includes('not exist') || message.includes('not found') || message.includes('DOCUMENT_NOT_EXIST')) {
-                    return { ok: true, data: [], metrics: [], updatedAt: '' };
+            const result = await app.callFunction({
+                name: 'wechatCheckerSync',
+                data: {
+                    action,
+                    payload
                 }
-                throw error;
-            }
+            });
+            const value = result && (result.result || result.data || result);
+            if (value && value.ok === false) throw new Error(value.error || '云函数同步失败');
+            return value || {};
+        }
+
+        async function loadCloudData() {
+            const result = await callSyncFunction('load');
+            return {
+                ok: true,
+                data: Array.isArray(result.data) ? result.data : [],
+                metrics: Array.isArray(result.metrics) ? result.metrics : [],
+                updatedAt: result.updatedAt || '',
+                updatedBy: result.updatedBy || ''
+            };
         }
 
         async function uploadCloudPayload() {
-            const app = await getCloudBaseApp();
             const payload = buildCloudBaseStatePayload();
-            await getCloudBaseCollection(app).doc(cloudConfig.docId).set(payload);
+            await callSyncFunction('save', payload);
+            lastCloudStateUpdatedAt = payload.updatedAt;
             return { confirmed: true, count: payload.data.length, metricCount: payload.metrics.length };
         }
 
@@ -1110,6 +1137,8 @@
             try {
                 const result = await loadCloudData();
                 if (!result.ok) throw new Error(result.error || '云端连接失败');
+                currentTeamMember = cloudConfig.username || '团队成员';
+                lastCloudStateUpdatedAt = result.updatedAt || '';
 
                 const mergeResult = mergeCloudRecords(result.data);
                 const metricMergeResult = mergeCloudMetrics(result.metrics);
@@ -1122,7 +1151,7 @@
                 await pushCloudData(true);
                 const count = db.length;
                 const metricCount = Object.keys(dailyMetrics).length;
-                setCloudStatus(`团队登录成功，已自动同步 ${count} 条名单数据、${metricCount} 天消耗数据。本地改动会自动上传。`, 'success');
+                setCloudStatus(`团队登录成功，已自动同步 ${count} 条名单数据、${metricCount} 天消耗数据。本地改动会自动上传。${getCloudUpdateText(result)}`, 'success');
                 alert(`团队登录成功。\n名单新增 ${mergeResult.added} 条、更新 ${mergeResult.updated} 条；消耗新增 ${metricMergeResult.added} 天、更新 ${metricMergeResult.updated} 天。`);
             } catch (error) {
                 console.error(error);
@@ -1148,16 +1177,19 @@
             try {
                 const result = await loadCloudData();
                 if (!result.ok) throw new Error(result.error || '云端读取失败');
+                const cloudUpdatedAt = result.updatedAt || '';
+                const remoteChanged = cloudUpdatedAt && cloudUpdatedAt !== lastCloudStateUpdatedAt;
 
                 const mergeResult = mergeCloudRecords(result.data);
                 const metricMergeResult = mergeCloudMetrics(result.metrics);
                 saveDb(true);
                 saveDailyMetrics(true);
                 refreshViews();
+                lastCloudStateUpdatedAt = cloudUpdatedAt || lastCloudStateUpdatedAt;
 
-                await uploadCloudPayload();
+                if (!silent) await uploadCloudPayload();
                 recordCloudSyncTime('bidirectional');
-                const message = `双向同步完成：名单新增 ${mergeResult.added} 条、更新 ${mergeResult.updated} 条；金额新增 ${metricMergeResult.added} 天、更新 ${metricMergeResult.updated} 天。`;
+                const message = `${silent ? '自动拉取完成' : '立即同步完成'}：名单新增 ${mergeResult.added} 条、更新 ${mergeResult.updated} 条；消耗新增 ${metricMergeResult.added} 天、更新 ${metricMergeResult.updated} 天。${remoteChanged ? getCloudUpdateText(result) : ''}`;
                 setCloudStatus(message, 'success');
                 if (!silent) alert(message);
             } catch (error) {
