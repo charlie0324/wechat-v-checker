@@ -189,8 +189,8 @@
                 <div class="form-group">
                     <label>登录方式</label>
                     <select id="cloudAuthTypeInput" onchange="updateCloudAuthFields(); saveCloudSettings(false);">
+                        <option value="password">账号密码登录</option>
                         <option value="anonymous">匿名登录</option>
-                        <option value="password">邮箱密码登录</option>
                     </select>
                 </div>
                 <div class="form-group cloud-password-field hidden">
@@ -460,7 +460,7 @@
             envId: 'youareenough-d2g7e94w5105cdc05',
             collection: 'wechat_checker_state',
             docId: 'main',
-            authType: 'anonymous',
+            authType: 'password',
             username: '',
             password: '',
             autoSync: false,
@@ -826,7 +826,7 @@
                 envId: String(raw.envId || envIdFromLegacy || DEFAULT_CLOUDBASE_CONFIG.envId).trim(),
                 collection: String(raw.collection || DEFAULT_CLOUDBASE_CONFIG.collection).trim(),
                 docId: String(raw.docId || DEFAULT_CLOUDBASE_CONFIG.docId).trim(),
-                authType: raw.authType === 'password' ? 'password' : 'anonymous',
+                authType: raw.authType === 'anonymous' ? 'anonymous' : 'password',
                 username: String(raw.username || '').trim(),
                 password: String(raw.password || ''),
                 autoSync: !!raw.autoSync,
@@ -839,7 +839,7 @@
             document.getElementById('cloudEnvInput').value = cloudConfig.envId || DEFAULT_CLOUDBASE_CONFIG.envId;
             document.getElementById('cloudCollectionInput').value = cloudConfig.collection || DEFAULT_CLOUDBASE_CONFIG.collection;
             document.getElementById('cloudDocInput').value = cloudConfig.docId || DEFAULT_CLOUDBASE_CONFIG.docId;
-            document.getElementById('cloudAuthTypeInput').value = cloudConfig.authType || 'anonymous';
+            document.getElementById('cloudAuthTypeInput').value = cloudConfig.authType || 'password';
             document.getElementById('cloudUsernameInput').value = cloudConfig.username || '';
             document.getElementById('cloudPasswordInput').value = cloudConfig.password || '';
             document.getElementById('cloudAutoSyncInput').checked = !!cloudConfig.autoSync;
@@ -936,8 +936,8 @@
                 return false;
             }
             if (cloudConfig.authType === 'password' && (!cloudConfig.username || !cloudConfig.password)) {
-                setCloudStatus('邮箱密码登录需要填写账号和密码。', 'error');
-                if (showAlert) alert("邮箱密码登录需要填写账号和密码。");
+                setCloudStatus('账号密码登录需要填写账号和密码。', 'error');
+                if (showAlert) alert("账号密码登录需要填写账号和密码。");
                 return false;
             }
             return true;
@@ -986,7 +986,7 @@
                         } else if (typeof auth.signInWithEmailAndPassword === 'function') {
                             result = await auth.signInWithEmailAndPassword(cloudConfig.username, cloudConfig.password);
                         } else {
-                            throw new Error('当前 CloudBase SDK 不支持邮箱密码登录，请改用匿名登录或检查 SDK 版本。');
+                            throw new Error('当前 CloudBase SDK 不支持账号密码登录，请改用匿名登录或检查 SDK 版本。');
                         }
                         if (result && result.error) throw result.error;
                         return result;
@@ -1083,7 +1083,7 @@
             } catch (error) {
                 console.error(error);
                 setCloudStatus(`CloudBase 连接失败：${error.message}`, 'error');
-                alert(`CloudBase 连接失败：${error.message}\n\n请确认：1. charlie0324.github.io 已加入 Web 安全域名；2. 用户管理里的登录方式已开启；3. 数据库集合权限允许当前用户读写。`);
+                alert(`CloudBase 连接失败：${error.message}\n\n请确认：1. 当前 CloudBase 托管域名可以正常打开；2. 用户管理里的账号密码登录已开启；3. 数据库集合权限允许当前用户读写。`);
             } finally {
                 isCloudSyncing = false;
             }
