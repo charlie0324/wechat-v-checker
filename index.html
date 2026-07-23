@@ -174,30 +174,30 @@
             </div>
 
             <div class="sync-grid">
-                <div class="form-group">
+                <div class="form-group hidden">
                     <label>CloudBase 环境 ID</label>
-                    <input type="text" id="cloudEnvInput" placeholder="CloudBase envId">
+                    <input type="hidden" id="cloudEnvInput" placeholder="CloudBase envId">
                 </div>
-                <div class="form-group">
+                <div class="form-group hidden">
                     <label>集合名</label>
-                    <input type="text" id="cloudCollectionInput" placeholder="wechat_checker_state">
+                    <input type="hidden" id="cloudCollectionInput" placeholder="wechat_checker_state">
                 </div>
-                <div class="form-group">
+                <div class="form-group hidden">
                     <label>文档 ID</label>
-                    <input type="text" id="cloudDocInput" placeholder="main">
+                    <input type="hidden" id="cloudDocInput" placeholder="main">
                 </div>
-                <div class="form-group">
+                <div class="form-group hidden">
                     <label>登录方式</label>
-                    <select id="cloudAuthTypeInput" onchange="updateCloudAuthFields(); saveCloudSettings(false);">
+                    <select id="cloudAuthTypeInput" class="hidden" onchange="updateCloudAuthFields(); saveCloudSettings(false);">
                         <option value="password">账号密码登录</option>
                         <option value="anonymous">匿名登录</option>
                     </select>
                 </div>
-                <div class="form-group cloud-password-field hidden">
+                <div class="form-group cloud-password-field">
                     <label>登录账号</label>
                     <input type="text" id="cloudUsernameInput" placeholder="CloudBase 用户邮箱或账号">
                 </div>
-                <div class="form-group cloud-password-field hidden">
+                <div class="form-group cloud-password-field">
                     <label>登录密码</label>
                     <input type="password" id="cloudPasswordInput" placeholder="CloudBase 用户密码">
                 </div>
@@ -205,17 +205,17 @@
 
             <div class="check-actions">
                 <div class="action-bar">
-                    <button onclick="saveCloudSettings()" class="btn btn-outline">保存同步设置</button>
-                    <button onclick="testCloudConnection()" class="btn btn-outline">测试云连接</button>
-                    <button onclick="pullCloudData()" class="btn btn-primary">从云端拉取</button>
-                    <button onclick="pushCloudData()" class="btn btn-success">上传到云端</button>
-                    <button onclick="syncCloudData(false)" class="btn btn-outline">立即双向同步</button>
+                    <button onclick="saveCloudSettings()" class="btn btn-outline hidden">保存同步设置</button>
+                    <button onclick="testCloudConnection()" class="btn btn-primary">团队登录</button>
+                    <button onclick="pullCloudData()" class="btn btn-primary team-sync-action hidden">从云端拉取</button>
+                    <button onclick="pushCloudData()" class="btn btn-success team-sync-action hidden">上传到云端</button>
+                    <button onclick="syncCloudData(false)" class="btn btn-outline team-sync-action hidden">立即双向同步</button>
                 </div>
-                <label class="toggle-row">
+                <label class="toggle-row hidden">
                     <input type="checkbox" id="cloudAutoSyncInput" onchange="saveCloudSettings(false)">
                     自动同步本地改动
                 </label>
-                <label class="toggle-row">
+                <label class="toggle-row hidden">
                     <input type="checkbox" id="cloudPeriodicSyncInput" onchange="saveCloudSettings(false)">
                     每 30 秒自动拉取并上传
                 </label>
@@ -224,6 +224,7 @@
             <div id="cloudSyncTimeStatus" class="sync-status text-sm mt-1">最新上传：暂无；最新双向同步：暂无。</div>
         </div>
 
+        <div id="protectedApp" class="hidden">
         <div class="grid">
             <!-- 左侧：录入数据区域 -->
             <div class="card">
@@ -435,6 +436,7 @@
                 <div id="periodResults" class="hidden"></div>
             </div>
         </div>
+        </div>
     </div>
 
     <!-- 逻辑代码 -->
@@ -463,14 +465,15 @@
             authType: 'password',
             username: '',
             password: '',
-            autoSync: false,
-            periodicSync: false
+            autoSync: true,
+            periodicSync: true
         };
         let cloudConfig = normalizeCloudConfig(JSON.parse(localStorage.getItem('wechat_tracker_cloud_config')) || {});
         let cloudSyncMeta = JSON.parse(localStorage.getItem('wechat_tracker_cloud_sync_meta')) || { lastUploadAt: '', lastBidirectionalSyncAt: '' };
         let cloudPushTimer = null;
         let cloudPeriodicTimer = null;
         let isCloudSyncing = false;
+        let isTeamLoggedIn = false;
         let cloudBaseApp = null;
         let cloudBaseAuthReady = null;
         let cloudBaseConfigKey = '';
@@ -483,12 +486,14 @@
             dailyMetrics = normalizeDailyMetricsMap(dailyMetrics);
             saveDailyMetrics(true);
             loadCloudSettingsToForm();
+            applyTeamSyncDefaults();
+            setProtectedAppVisible(false);
             loadDbDateFilterToForm();
             loadDailyMetricToForm();
             renderTable();
             renderCloudSyncTimes();
             updateUndoStatus();
-            setupPeriodicCloudSync();
+            setCloudStatus('请先使用团队账号登录。登录成功后会自动拉取并同步团队数据。');
         };
 
         // --- 表单或电话状态处理 ---
@@ -829,9 +834,34 @@
                 authType: raw.authType === 'anonymous' ? 'anonymous' : 'password',
                 username: String(raw.username || '').trim(),
                 password: String(raw.password || ''),
-                autoSync: !!raw.autoSync,
-                periodicSync: !!raw.periodicSync
+                autoSync: raw.autoSync !== undefined ? !!raw.autoSync : DEFAULT_CLOUDBASE_CONFIG.autoSync,
+                periodicSync: raw.periodicSync !== undefined ? !!raw.periodicSync : DEFAULT_CLOUDBASE_CONFIG.periodicSync
             };
+        }
+
+        function applyTeamSyncDefaults() {
+            const flag = 'wechat_tracker_team_sync_defaults_applied';
+            if (localStorage.getItem(flag)) return;
+            cloudConfig.autoSync = true;
+            cloudConfig.periodicSync = true;
+            localStorage.setItem('wechat_tracker_cloud_config', JSON.stringify(cloudConfig));
+            localStorage.setItem(flag, 'true');
+            document.getElementById('cloudAutoSyncInput').checked = true;
+            document.getElementById('cloudPeriodicSyncInput').checked = true;
+        }
+
+        function setProtectedAppVisible(visible) {
+            const protectedApp = document.getElementById('protectedApp');
+            if (protectedApp) protectedApp.classList.toggle('hidden', !visible);
+            document.querySelectorAll('.team-sync-action').forEach(el => {
+                el.classList.toggle('hidden', !visible);
+            });
+        }
+
+        function markTeamLoggedIn() {
+            isTeamLoggedIn = true;
+            setProtectedAppVisible(true);
+            setupPeriodicCloudSync();
         }
 
         function loadCloudSettingsToForm() {
@@ -888,7 +918,7 @@
                 clearInterval(cloudPeriodicTimer);
                 cloudPeriodicTimer = null;
             }
-            if (!cloudConfig.periodicSync || !cloudConfig.envId) return;
+            if (!isTeamLoggedIn || !cloudConfig.periodicSync || !cloudConfig.envId) return;
             cloudPeriodicTimer = setInterval(() => {
                 syncCloudData(true);
             }, CLOUD_PERIODIC_SYNC_MS);
@@ -944,7 +974,7 @@
         }
 
         function queueCloudPush() {
-            if (!cloudConfig.envId || isCloudSyncing) return;
+            if (!isTeamLoggedIn || !cloudConfig.envId || isCloudSyncing) return;
             clearTimeout(cloudPushTimer);
             cloudPushTimer = setTimeout(() => {
                 pushCloudData(true);
@@ -1050,6 +1080,10 @@
 
         async function pushCloudData(silent = false) {
             if (!requireCloudConfig(!silent)) return;
+            if (!isTeamLoggedIn) {
+                if (!silent) alert("请先点击“团队登录”，登录成功后才能上传团队数据。");
+                return;
+            }
             if (isCloudSyncing) return;
             isCloudSyncing = true;
             if (!silent) setCloudStatus('正在上传到 CloudBase...');
@@ -1071,17 +1105,28 @@
         async function testCloudConnection() {
             if (!requireCloudConfig()) return;
             isCloudSyncing = true;
-            setCloudStatus('正在测试 CloudBase 连接...');
+            setCloudStatus('正在团队登录，并拉取团队数据...');
 
             try {
                 const result = await loadCloudData();
                 if (!result.ok) throw new Error(result.error || '云端连接失败');
-                const count = Array.isArray(result.data) ? result.data.length : 0;
-                const metricCount = Array.isArray(result.metrics) ? result.metrics.length : 0;
-                setCloudStatus(`CloudBase 连接正常，可以读取 ${count} 条名单数据、${metricCount} 条消耗数据。`, 'success');
-                alert(`CloudBase 连接正常，可以读取 ${count} 条名单数据、${metricCount} 条消耗数据。`);
+
+                const mergeResult = mergeCloudRecords(result.data);
+                const metricMergeResult = mergeCloudMetrics(result.metrics);
+                saveDb(true);
+                saveDailyMetrics(true);
+                refreshViews();
+
+                markTeamLoggedIn();
+                isCloudSyncing = false;
+                await pushCloudData(true);
+                const count = db.length;
+                const metricCount = Object.keys(dailyMetrics).length;
+                setCloudStatus(`团队登录成功，已自动同步 ${count} 条名单数据、${metricCount} 天消耗数据。本地改动会自动上传。`, 'success');
+                alert(`团队登录成功。\n名单新增 ${mergeResult.added} 条、更新 ${mergeResult.updated} 条；消耗新增 ${metricMergeResult.added} 天、更新 ${metricMergeResult.updated} 天。`);
             } catch (error) {
                 console.error(error);
+                setProtectedAppVisible(false);
                 setCloudStatus(`CloudBase 连接失败：${error.message}`, 'error');
                 alert(`CloudBase 连接失败：${error.message}\n\n请确认：1. 当前 CloudBase 托管域名可以正常打开；2. 用户管理里的账号密码登录已开启；3. 数据库集合权限允许当前用户读写。`);
             } finally {
@@ -1091,6 +1136,10 @@
 
         async function syncCloudData(silent = false) {
             if (!requireCloudConfig(!silent)) return;
+            if (!isTeamLoggedIn) {
+                if (!silent) alert("请先点击“团队登录”，登录成功后才能同步团队数据。");
+                return;
+            }
             if (isCloudSyncing) return;
 
             isCloudSyncing = true;
@@ -1122,6 +1171,10 @@
 
         async function pullCloudData() {
             if (!requireCloudConfig()) return;
+            if (!isTeamLoggedIn) {
+                alert("请先点击“团队登录”，登录成功后才能拉取团队数据。");
+                return;
+            }
             if (db.length > 0 && !confirm("从 CloudBase 拉取会用云端数据覆盖当前本地数据，确认继续吗？")) return;
 
             isCloudSyncing = true;
