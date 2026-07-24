@@ -217,11 +217,11 @@
                 </label>
                 <label class="toggle-row hidden">
                     <input type="checkbox" id="cloudPeriodicSyncInput" onchange="saveCloudSettings(false)">
-                    每 10 秒自动同步
+                    每 3 秒自动同步
                 </label>
             </div>
             <div id="cloudSyncStatus" class="sync-status text-sm mt-2">未配置云同步。</div>
-            <div id="cloudSyncTimeStatus" class="sync-status text-sm mt-1">最新上传：暂无；最新双向同步：暂无。</div>
+            <div id="cloudSyncTimeStatus" class="sync-status text-sm mt-1">最新上传：暂无；最新同步：暂无；团队最近更新：暂无。</div>
         </div>
 
         <div id="protectedApp" class="hidden">
@@ -478,17 +478,18 @@
             periodicSync: true
         };
         let cloudConfig = normalizeCloudConfig(JSON.parse(localStorage.getItem('wechat_tracker_cloud_config')) || {});
-        let cloudSyncMeta = JSON.parse(localStorage.getItem('wechat_tracker_cloud_sync_meta')) || { lastUploadAt: '', lastBidirectionalSyncAt: '' };
+        let cloudSyncMeta = normalizeCloudSyncMeta(JSON.parse(localStorage.getItem('wechat_tracker_cloud_sync_meta')) || {});
         let cloudPushTimer = null;
         let cloudPeriodicTimer = null;
         let isCloudSyncing = false;
+        let hasPendingCloudPush = false;
         let isTeamLoggedIn = false;
         let currentTeamMember = '';
         let cloudBaseApp = null;
         let cloudBaseAuthReady = null;
         let cloudBaseConfigKey = '';
         let lastCloudStateUpdatedAt = '';
-        const CLOUD_PERIODIC_SYNC_MS = 10 * 1000;
+        const CLOUD_PERIODIC_SYNC_MS = 3 * 1000;
 
         // 页面加载完成后渲染表格
         window.onload = () => {
@@ -536,6 +537,15 @@
         function saveDailyMetrics(skipCloudSync = false) {
             localStorage.setItem('wechat_tracker_daily_metrics', JSON.stringify(dailyMetrics));
             if (!skipCloudSync && cloudConfig.autoSync) queueCloudPush();
+        }
+
+        function normalizeCloudSyncMeta(raw = {}) {
+            return {
+                lastUploadAt: String(raw.lastUploadAt || ''),
+                lastBidirectionalSyncAt: String(raw.lastBidirectionalSyncAt || ''),
+                lastTeamUpdatedAt: String(raw.lastTeamUpdatedAt || ''),
+                lastTeamUpdatedBy: String(raw.lastTeamUpdatedBy || '')
+            };
         }
 
         function parseAmount(value) {
@@ -846,8 +856,8 @@
                 authType: raw.authType === 'anonymous' ? 'anonymous' : 'password',
                 username: String(raw.username || '').trim(),
                 password: String(raw.password || ''),
-                autoSync: raw.autoSync !== undefined ? !!raw.autoSync : DEFAULT_CLOUDBASE_CONFIG.autoSync,
-                periodicSync: raw.periodicSync !== undefined ? !!raw.periodicSync : DEFAULT_CLOUDBASE_CONFIG.periodicSync
+                autoSync: true,
+                periodicSync: true
             };
         }
 
@@ -921,7 +931,7 @@
             if (prefix) pieces.push(prefix);
             pieces.push(`CloudBase 已配置：${cloudConfig.envId}`);
             if (cloudConfig.autoSync) pieces.push('本地改动会自动上传');
-            if (cloudConfig.periodicSync) pieces.push('每 10 秒会自动同步');
+            if (cloudConfig.periodicSync) pieces.push('每 3 秒会自动同步');
             return `${pieces.join('，')}。`;
         }
 
@@ -973,6 +983,12 @@
             return `${member} ${formatRelativeTime(result.updatedAt)}更新了一次数据。`;
         }
 
+        function rememberCloudTeamUpdate(update = {}) {
+            if (!update.updatedAt) return;
+            cloudSyncMeta.lastTeamUpdatedAt = update.updatedAt;
+            cloudSyncMeta.lastTeamUpdatedBy = update.updatedBy || '团队成员';
+        }
+
         function getFriendlyErrorMessage(error) {
             const raw = String(error && (error.message || error.errMsg || error) || '未知错误');
             try {
@@ -986,16 +1002,20 @@
         function renderCloudSyncTimes() {
             const el = document.getElementById('cloudSyncTimeStatus');
             if (!el) return;
-            el.innerText = `最新上传：${formatSyncTime(cloudSyncMeta.lastUploadAt)}；最新双向同步：${formatSyncTime(cloudSyncMeta.lastBidirectionalSyncAt)}。`;
+            const teamText = cloudSyncMeta.lastTeamUpdatedAt
+                ? `${cloudSyncMeta.lastTeamUpdatedBy || '团队成员'} ${formatRelativeTime(cloudSyncMeta.lastTeamUpdatedAt)}更新`
+                : '暂无';
+            el.innerText = `最新上传：${formatSyncTime(cloudSyncMeta.lastUploadAt)}；最新同步：${formatSyncTime(cloudSyncMeta.lastBidirectionalSyncAt)}；团队最近更新：${teamText}。`;
         }
 
-        function recordCloudSyncTime(type) {
+        function recordCloudSyncTime(type, teamUpdate = null, options = {}) {
             const now = new Date().toISOString();
             if (type === 'upload') cloudSyncMeta.lastUploadAt = now;
             if (type === 'bidirectional') {
                 cloudSyncMeta.lastBidirectionalSyncAt = now;
-                cloudSyncMeta.lastUploadAt = now;
+                if (options.includesUpload) cloudSyncMeta.lastUploadAt = now;
             }
+            if (teamUpdate) rememberCloudTeamUpdate(teamUpdate);
             localStorage.setItem('wechat_tracker_cloud_sync_meta', JSON.stringify(cloudSyncMeta));
             renderCloudSyncTimes();
         }
@@ -1016,11 +1036,24 @@
         }
 
         function queueCloudPush() {
-            if (!isTeamLoggedIn || !cloudConfig.envId || isCloudSyncing) return;
+            if (!isTeamLoggedIn || !cloudConfig.envId) return;
+            hasPendingCloudPush = true;
+            if (isCloudSyncing) {
+                setCloudStatus('已记录本地改动，当前同步完成后会自动上传。');
+                return;
+            }
             clearTimeout(cloudPushTimer);
             cloudPushTimer = setTimeout(() => {
                 pushCloudData(true);
-            }, 900);
+            }, 400);
+        }
+
+        function flushPendingCloudPush() {
+            if (!hasPendingCloudPush || isCloudSyncing || !isTeamLoggedIn) return;
+            clearTimeout(cloudPushTimer);
+            cloudPushTimer = setTimeout(() => {
+                pushCloudData(true);
+            }, 50);
         }
 
         function getCloudBaseConfigKey() {
@@ -1122,7 +1155,13 @@
             const payload = buildCloudBaseStatePayload();
             await callSyncFunction('save', payload);
             lastCloudStateUpdatedAt = payload.updatedAt;
-            return { confirmed: true, count: payload.data.length, metricCount: payload.metrics.length };
+            return {
+                confirmed: true,
+                count: payload.data.length,
+                metricCount: payload.metrics.length,
+                updatedAt: payload.updatedAt,
+                updatedBy: payload.updatedBy
+            };
         }
 
         async function pushCloudData(silent = false) {
@@ -1131,14 +1170,19 @@
                 if (!silent) alert("请先点击“团队登录”，登录成功后才能上传团队数据。");
                 return;
             }
-            if (isCloudSyncing) return;
+            if (isCloudSyncing) {
+                hasPendingCloudPush = true;
+                if (!silent) setCloudStatus('当前正在同步，已排队上传。');
+                return;
+            }
+            hasPendingCloudPush = false;
             isCloudSyncing = true;
             if (!silent) setCloudStatus('正在上传到 CloudBase...');
 
             try {
-                await uploadCloudPayload();
-                recordCloudSyncTime('upload');
-                setCloudStatus(`已上传 ${db.length} 条名单数据、${Object.keys(dailyMetrics).length} 天消耗数据到 CloudBase。`, 'success');
+                const uploadResult = await uploadCloudPayload();
+                recordCloudSyncTime('upload', uploadResult);
+                setCloudStatus(`${uploadResult.updatedBy || '团队成员'} ${formatRelativeTime(uploadResult.updatedAt)}更新了一次数据，已自动上传。`, 'success');
                 if (!silent) alert("已上传到 CloudBase。");
             } catch (error) {
                 console.error(error);
@@ -1147,6 +1191,7 @@
                 if (!silent) alert(`上传失败：${message}`);
             } finally {
                 isCloudSyncing = false;
+                flushPendingCloudPush();
             }
         }
 
@@ -1209,10 +1254,16 @@
                 refreshViews();
                 lastCloudStateUpdatedAt = cloudUpdatedAt || lastCloudStateUpdatedAt;
 
-                if (!silent) await uploadCloudPayload();
-                recordCloudSyncTime('bidirectional');
-                const message = `${silent ? '自动拉取完成' : '立即同步完成'}：名单新增 ${mergeResult.added} 条、更新 ${mergeResult.updated} 条；消耗新增 ${metricMergeResult.added} 天、更新 ${metricMergeResult.updated} 天。${remoteChanged ? getCloudUpdateText(result) : ''}`;
-                setCloudStatus(message, 'success');
+                let uploadResult = null;
+                if (!silent) uploadResult = await uploadCloudPayload();
+                recordCloudSyncTime('bidirectional', uploadResult || result, { includesUpload: !!uploadResult });
+                const changedText = `名单新增 ${mergeResult.added} 条、更新 ${mergeResult.updated} 条；消耗新增 ${metricMergeResult.added} 天、更新 ${metricMergeResult.updated} 天。`;
+                const message = !silent && uploadResult
+                    ? `立即同步完成：${changedText}${uploadResult.updatedBy || '团队成员'} ${formatRelativeTime(uploadResult.updatedAt)}更新了一次数据。`
+                    : `已自动同步团队更新：${changedText}${getCloudUpdateText(result)}`;
+                if (!silent || remoteChanged || mergeResult.added > 0 || mergeResult.updated > 0 || metricMergeResult.added > 0 || metricMergeResult.updated > 0) {
+                    setCloudStatus(message, 'success');
+                }
                 if (!silent) alert(message);
             } catch (error) {
                 console.error(error);
@@ -1221,6 +1272,7 @@
                 if (!silent) alert(`同步失败：${message}`);
             } finally {
                 isCloudSyncing = false;
+                flushPendingCloudPush();
             }
         }
 
@@ -1245,6 +1297,8 @@
                 saveDb(true);
                 saveDailyMetrics(true);
                 refreshViews();
+                lastCloudStateUpdatedAt = result.updatedAt || lastCloudStateUpdatedAt;
+                recordCloudSyncTime('bidirectional', result);
                 setCloudStatus(`已从 CloudBase 拉取 ${db.length} 条名单数据、${Object.keys(dailyMetrics).length} 天消耗数据。`, 'success');
                 alert("已从 CloudBase 拉取数据。");
             } catch (error) {
@@ -2592,7 +2646,9 @@
                     metricCount: Object.keys(dailyMetrics).length,
                     dbDateFilter,
                     lastUploadAt: cloudSyncMeta.lastUploadAt || '',
-                    lastBidirectionalSyncAt: cloudSyncMeta.lastBidirectionalSyncAt || ''
+                    lastBidirectionalSyncAt: cloudSyncMeta.lastBidirectionalSyncAt || '',
+                    lastTeamUpdatedAt: cloudSyncMeta.lastTeamUpdatedAt || '',
+                    lastTeamUpdatedBy: cloudSyncMeta.lastTeamUpdatedBy || ''
                 }
             };
         }
