@@ -642,6 +642,10 @@
                 String(value).includes('是');
         }
 
+        function hasOwnField(record, field) {
+            return !!record && Object.prototype.hasOwnProperty.call(record, field);
+        }
+
         function getTrackingValue(value) {
             return ['untracked', 'tracked1', 'tracked2', 'tracked3', 'tracked4'].includes(value) ? value : 'untracked';
         }
@@ -658,7 +662,13 @@
         }
 
         function isBooked(record) {
-            return !!(record && (record.phoneBooked || record.formSubmitted || record.formFilled));
+            if (!record) return false;
+            const hasSplitBookingField = hasOwnField(record, 'phoneBooked') || hasOwnField(record, 'formSubmitted');
+            return !!(
+                parseStatusBool(record.phoneBooked) ||
+                parseStatusBool(record.formSubmitted) ||
+                (!hasSplitBookingField && parseStatusBool(record.formFilled))
+            );
         }
 
         function syncBookedFlag(record) {
@@ -668,9 +678,11 @@
 
         function normalizeRecord(record) {
             const baseTime = Number(record && record.timestamp) || Date.now();
-            const legacyBooked = parseStatusBool(record && record.formFilled);
-            const phoneBooked = parseStatusBool(record && record.phoneBooked);
-            const formSubmitted = parseStatusBool(record && record.formSubmitted) || legacyBooked;
+            const hasPhoneBooked = hasOwnField(record, 'phoneBooked');
+            const hasFormSubmitted = hasOwnField(record, 'formSubmitted');
+            const legacyBooked = parseStatusBool(record && (record.formFilled || record.filled));
+            const phoneBooked = hasPhoneBooked ? parseStatusBool(record && record.phoneBooked) : false;
+            const formSubmitted = hasFormSubmitted ? parseStatusBool(record && record.formSubmitted) : legacyBooked;
             const dealAmount = parseAmount(record && record.dealAmount);
             const dealClosed = parseStatusBool(record && record.dealClosed) || dealAmount > 0;
             return {
@@ -683,7 +695,7 @@
                 trackingStatus: getTrackingValue(record && record.trackingStatus),
                 dealClosed,
                 dealAmount,
-                formFilled: phoneBooked || formSubmitted || legacyBooked,
+                formFilled: phoneBooked || formSubmitted || (!hasPhoneBooked && !hasFormSubmitted && legacyBooked),
                 timestamp: baseTime,
                 updatedAt: String(record && record.updatedAt || new Date(baseTime).toISOString()),
                 formFilledAt: String(record && record.formFilledAt || ''),
