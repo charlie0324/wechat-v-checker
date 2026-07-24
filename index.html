@@ -240,6 +240,14 @@
                     <input type="date" id="dateInput">
                 </div>
 
+                <div class="form-group">
+                    <label>获客来源</label>
+                    <select id="leadSourceInput">
+                        <option value="yuxin">雨欣</option>
+                        <option value="wenting">文婷</option>
+                    </select>
+                </div>
+
                 <!-- 手动录入名单 -->
                 <div class="form-group">
                     <label>输入名单 (每行一个ID)</label>
@@ -307,6 +315,7 @@
                                 <tr>
                                     <th>ID 名称</th>
                                     <th>+V 日期</th>
+                                    <th>获客来源</th>
                                     <th>是否精准</th>
                                     <th>是否约上电话</th>
                                     <th>是否填表单</th>
@@ -655,6 +664,7 @@
             return {
                 id: String(record && record.id || ''),
                 date: String(record && record.date || ''),
+                leadSource: getLeadSourceValue(record && (record.leadSource || record.source)),
                 precisionStatus: getPrecisionValue(record && record.precisionStatus),
                 phoneBooked,
                 formSubmitted,
@@ -1295,7 +1305,29 @@
         }
 
         function getRecordLabel(record) {
-            return `${record.id}${record.date ? ` (${record.date})` : ''} / ${getPrecisionLabel(record.precisionStatus)}`;
+            return `${record.id}${record.date ? ` (${record.date})` : ''} / ${getLeadSourceLabel(record.leadSource)} / ${getPrecisionLabel(record.precisionStatus)}`;
+        }
+
+        function getLeadSourceValue(value) {
+            const text = String(value || '').trim().toLowerCase();
+            if (text === '雨欣' || text === 'yuxin') return 'yuxin';
+            if (text === '文婷' || text === 'wenting') return 'wenting';
+            return '';
+        }
+
+        function getLeadSourceLabel(value) {
+            const labels = {
+                yuxin: '雨欣',
+                wenting: '文婷'
+            };
+            return labels[getLeadSourceValue(value)] || '未设置';
+        }
+
+        function renderLeadSourceBadge(value) {
+            const source = getLeadSourceValue(value);
+            if (source === 'yuxin') return '<span class="badge badge-green">雨欣</span>';
+            if (source === 'wenting') return '<span class="badge badge-yellow">文婷</span>';
+            return '<span class="badge badge-gray">未设置</span>';
         }
 
         function getPrecisionValue(value) {
@@ -1342,6 +1374,18 @@
                     <option value="accurate" ${status === 'accurate' ? 'selected' : ''}>精准</option>
                     <option value="unknown" ${status === 'unknown' ? 'selected' : ''}>不确定</option>
                     <option value="inaccurate" ${status === 'inaccurate' ? 'selected' : ''}>不精准</option>
+                </select>
+            `;
+        }
+
+        function renderLeadSourceSelect(id, value, extraClass = 'precision-select') {
+            const encodedId = encodeURIComponent(id);
+            const source = getLeadSourceValue(value);
+            return `
+                <select class="${extraClass}" onchange="updateLeadSourceById('${encodedId}', this.value)">
+                    <option value="" ${!source ? 'selected' : ''}>未设置</option>
+                    <option value="yuxin" ${source === 'yuxin' ? 'selected' : ''}>雨欣</option>
+                    <option value="wenting" ${source === 'wenting' ? 'selected' : ''}>文婷</option>
                 </select>
             `;
         }
@@ -1951,6 +1995,7 @@
                     <tr>
                         <td>${escapeHtml(item.date || '')}</td>
                         <td class="person-name" title="${escapeHtml(item.id)}">${escapeHtml(item.id)}</td>
+                        <td>${renderLeadSourceBadge(item.leadSource)}</td>
                         <td>${getPrecisionBadge(item.precisionStatus)}</td>
                         <td>${item.phoneBooked ? '<span class="badge badge-green">已约电话</span>' : '<span class="badge badge-red">未约电话</span>'}</td>
                         <td>${item.formSubmitted ? '<span class="badge badge-green">已填表单</span>' : '<span class="badge badge-red">未填表单</span>'}</td>
@@ -1968,6 +2013,7 @@
                             <tr>
                                 <th>+V 日期</th>
                                 <th>ID 名称</th>
+                                <th>获客来源</th>
                                 <th>是否精准</th>
                                 <th>是否约上电话</th>
                                 <th>是否填表单</th>
@@ -2157,9 +2203,11 @@
         // --- 核心功能 1：保存数据 ---
         function saveData() {
             const dateStr = document.getElementById('dateInput').value;
+            const leadSource = getLeadSourceValue(document.getElementById('leadSourceInput').value);
             const textValue = document.getElementById('idListInput').value;
 
             if (!dateStr) { alert("请选择日期！"); return; }
+            if (!leadSource) { alert("请选择获客来源！"); return; }
             if (!textValue.trim()) { alert("名单不能为空，请先粘贴今天加微的人！"); return; }
 
             const ids = textValue.split('\n').map(id => id.trim()).filter(id => id.length > 0);
@@ -2170,8 +2218,16 @@
             ids.forEach(id => {
                 const existingIndex = db.findIndex(item => item.id === id);
                 if (existingIndex > -1) {
+                    let changed = false;
                     if (db[existingIndex].date !== dateStr) {
                         db[existingIndex].date = dateStr;
+                        changed = true;
+                    }
+                    if (getLeadSourceValue(db[existingIndex].leadSource) !== leadSource) {
+                        db[existingIndex].leadSource = leadSource;
+                        changed = true;
+                    }
+                    if (changed) {
                         touchRecord(db[existingIndex]);
                         updatedCount++;
                     }
@@ -2180,6 +2236,7 @@
                     db.unshift({
                         id: id,
                         date: dateStr,
+                        leadSource,
                         precisionStatus: 'unknown',
                         phoneBooked: false,
                         formSubmitted: false,
@@ -2197,7 +2254,7 @@
             saveDb();
             document.getElementById('idListInput').value = '';
             refreshViews();
-            alert(`保存成功！\n新增了 ${addedCount} 个ID，更新了 ${updatedCount} 个ID的日期。`);
+            alert(`保存成功！\n新增了 ${addedCount} 个ID，更新了 ${updatedCount} 个ID的日期或来源。`);
         }
 
         // --- 核心功能 2：查询与核对 ---
@@ -2233,6 +2290,7 @@
                     <div style="font-size: 1.1rem; color: #111;">ID: <b>${exactMatch.id}</b></div>
                     <div class="mt-2" style="line-height: 1.8;">
                         <div>+V 日期: <span class="badge badge-green">${exactMatch.date}</span></div>
+                        <div>获客来源: ${renderLeadSourceBadge(exactMatch.leadSource)}</div>
                         <div>统计口径: ${isBooked(exactMatch) ? '<span class="badge badge-green">已约</span>' : '<span class="badge badge-red">未约</span>'}</div>
                         <div>电话: ${exactMatch.phoneBooked ? '<span class="badge badge-green">已约电话</span>' : '<span class="badge badge-red">未约电话</span>'}</div>
                         <div>表单: ${exactMatch.formSubmitted ? '<span class="badge badge-green">已填表单</span>' : '<span class="badge badge-red">未填表单</span>'}</div>
@@ -2240,6 +2298,7 @@
                         <div>成交: ${exactMatch.dealClosed ? '<span class="badge badge-green">已成交</span>' : '<span class="badge badge-red">未成交</span>'} · ${formatMoney(exactMatch.dealAmount)}</div>
                         <div>是否精准: ${getPrecisionBadge(exactMatch.precisionStatus)}</div>
                     </div>
+                    ${renderLeadSourceSelect(exactMatch.id, exactMatch.leadSource, 'inline-select')}
                     ${renderPrecisionSelect(exactMatch.id, exactMatch.precisionStatus, 'inline-select')}
                     ${renderBookingSelect(exactMatch.id, 'phoneBooked', exactMatch.phoneBooked, '已约电话', '未约电话', 'inline-select')}
                     ${renderBookingSelect(exactMatch.id, 'formSubmitted', exactMatch.formSubmitted, '已填表单', '未填表单', 'inline-select')}
@@ -2259,11 +2318,13 @@
                         <div class="similar-card-title">${m.id}</div>
                         <div class="similar-card-info">
                             +V 日期: <span style="background: #d1fae5; color: #065f46; padding: 1px 4px; border-radius: 4px; font-weight: bold;">${m.date}</span>
+                            &nbsp;&nbsp;来源: ${renderLeadSourceBadge(m.leadSource)}
                             &nbsp;&nbsp;统计: ${isBooked(m) ? '<span class="badge badge-green">已约</span>' : '<span class="badge badge-red">未约</span>'}
                             &nbsp;&nbsp;是否精准: ${getPrecisionBadge(m.precisionStatus)}
                             &nbsp;&nbsp;追踪: <span class="badge badge-yellow">${getTrackingLabel(m.trackingStatus)}</span>
                             &nbsp;&nbsp;成交: ${m.dealClosed ? '<span class="badge badge-green">已成交</span>' : '<span class="badge badge-red">未成交</span>'} · ${formatMoney(m.dealAmount)}
                         </div>
+                        ${renderLeadSourceSelect(m.id, m.leadSource, 'inline-select')}
                         ${renderPrecisionSelect(m.id, m.precisionStatus, 'inline-select')}
                         ${renderBookingSelect(m.id, 'phoneBooked', m.phoneBooked, '已约电话', '未约电话', 'inline-select')}
                         ${renderBookingSelect(m.id, 'formSubmitted', m.formSubmitted, '已填表单', '未填表单', 'inline-select')}
@@ -2320,6 +2381,7 @@
                     <td>
                         <input type="date" value="${item.date || ''}" onchange="updateVDate('${item.id.replace(/'/g, "\\'")}', this.value)" class="table-input">
                     </td>
+                    <td>${renderLeadSourceSelect(item.id, item.leadSource)}</td>
                     <td>${renderPrecisionSelect(item.id, item.precisionStatus)}</td>
                     <td>${renderBookingSelect(item.id, 'phoneBooked', item.phoneBooked, '已约电话', '未约电话')}</td>
                     <td>${renderBookingSelect(item.id, 'formSubmitted', item.formSubmitted, '已填表单', '未填表单')}</td>
@@ -2353,6 +2415,20 @@
             if (index > -1 && getPrecisionValue(db[index].precisionStatus) !== nextValue) {
                 pushUndo(`修改是否精准：${db[index].id}`);
                 db[index].precisionStatus = nextValue;
+                touchRecord(db[index]);
+                saveDb();
+                refreshViews();
+                searchData();
+            }
+        }
+
+        function updateLeadSourceById(encodedId, value) {
+            const id = decodeURIComponent(encodedId || '');
+            const index = db.findIndex(item => item.id === id);
+            const nextValue = getLeadSourceValue(value);
+            if (index > -1 && getLeadSourceValue(db[index].leadSource) !== nextValue) {
+                pushUndo(`修改获客来源：${db[index].id}`);
+                db[index].leadSource = nextValue;
                 touchRecord(db[index]);
                 saveDb();
                 refreshViews();
@@ -2457,17 +2533,18 @@
         function exportData() {
             if (db.length === 0) { alert("没有数据可导出！"); return; }
             let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-            csvContent += "微信ID,+V日期,是否精准,是否约上电话,是否填表单,是否追踪,是否成交,成交金额\n";
+            csvContent += "微信ID,+V日期,获客来源,是否精准,是否约上电话,是否填表单,是否追踪,是否成交,成交金额\n";
             db.forEach(item => {
                 let id = (item.id || "").replace(/,/g, "，");
                 let date = item.date || "";
+                let leadSource = getLeadSourceLabel(item.leadSource);
                 let precision = getPrecisionLabel(item.precisionStatus);
                 let phoneStatus = item.phoneBooked ? "已约电话" : "未约电话";
                 let formStatus = item.formSubmitted ? "已填表单" : "未填表单";
                 let trackingStatus = getTrackingLabel(item.trackingStatus);
                 let dealStatus = item.dealClosed ? "已成交" : "未成交";
                 let dealAmount = parseAmount(item.dealAmount);
-                csvContent += `${id},${date},${precision},${phoneStatus},${formStatus},${trackingStatus},${dealStatus},${dealAmount}\n`;
+                csvContent += `${id},${date},${leadSource},${precision},${phoneStatus},${formStatus},${trackingStatus},${dealStatus},${dealAmount}\n`;
             });
             const encodedUri = encodeURI(csvContent);
             const link = document.createElement("a");
@@ -2564,13 +2641,17 @@
                     if (parts.length >= 2) {
                         const wxId = parts[0].trim(), vDate = parts[1].trim();
                         const thirdValue = parts.length > 2 ? parts[2].trim() : '';
-                        const thirdIsPrecision = ['精准', '确定精准', '不确定', '不精准', 'accurate', 'unknown', 'inaccurate'].includes(thirdValue.toLowerCase()) || ['精准', '确定精准', '不确定', '不精准'].includes(thirdValue);
-                        const precisionStatus = thirdIsPrecision ? parsePrecisionStatus(thirdValue) : 'unknown';
-                        const fourthValue = parts.length > 3 ? parts[3].trim() : '';
-                        const fifthValue = parts.length > 4 ? parts[4].trim() : '';
-                        const sixthValue = parts.length > 5 ? parts[5].trim() : '';
-                        const seventhValue = parts.length > 6 ? parts[6].trim() : '';
-                        const eighthValue = parts.length > 7 ? parts[7].trim() : '';
+                        const thirdIsSource = !!getLeadSourceValue(thirdValue);
+                        const leadSource = thirdIsSource ? getLeadSourceValue(thirdValue) : '';
+                        const precisionIndex = thirdIsSource ? 3 : 2;
+                        const precisionValue = parts.length > precisionIndex ? parts[precisionIndex].trim() : '';
+                        const precisionIsPresent = ['精准', '确定精准', '不确定', '不精准', 'accurate', 'unknown', 'inaccurate'].includes(precisionValue.toLowerCase()) || ['精准', '确定精准', '不确定', '不精准'].includes(precisionValue);
+                        const precisionStatus = precisionIsPresent ? parsePrecisionStatus(precisionValue) : 'unknown';
+                        const fourthValue = parts.length > precisionIndex + 1 ? parts[precisionIndex + 1].trim() : '';
+                        const fifthValue = parts.length > precisionIndex + 2 ? parts[precisionIndex + 2].trim() : '';
+                        const sixthValue = parts.length > precisionIndex + 3 ? parts[precisionIndex + 3].trim() : '';
+                        const seventhValue = parts.length > precisionIndex + 4 ? parts[precisionIndex + 4].trim() : '';
+                        const eighthValue = parts.length > precisionIndex + 5 ? parts[precisionIndex + 5].trim() : '';
                         const legacyBooked = fourthValue.includes('已约') || fourthValue.includes('已填');
                         const phoneBooked = fourthValue.includes('已约电话') || fourthValue === '是';
                         const formSubmitted = fifthValue ? (fifthValue.includes('已填') || fifthValue === '是') : legacyBooked;
@@ -2583,17 +2664,18 @@
                             if (idx > -1) {
                                 let changed = false;
                                 if(db[idx].date !== vDate) { db[idx].date = vDate; changed = true; }
-                                if(thirdIsPrecision && getPrecisionValue(db[idx].precisionStatus) !== precisionStatus) { db[idx].precisionStatus = precisionStatus; changed = true; }
-                                if(parts.length > 3 && !!db[idx].phoneBooked !== phoneBooked) { db[idx].phoneBooked = phoneBooked; changed = true; }
-                                if(parts.length > 3 && !!db[idx].formSubmitted !== formSubmitted) { db[idx].formSubmitted = formSubmitted; changed = true; }
-                                if(parts.length > 5 && getTrackingValue(db[idx].trackingStatus) !== trackingStatus) { db[idx].trackingStatus = trackingStatus; changed = true; }
-                                if(parts.length > 6 && !!db[idx].dealClosed !== dealClosed) { db[idx].dealClosed = dealClosed; changed = true; }
-                                if(parts.length > 7 && parseAmount(db[idx].dealAmount) !== dealAmount) { db[idx].dealAmount = dealAmount; changed = true; }
+                                if(thirdIsSource && getLeadSourceValue(db[idx].leadSource) !== leadSource) { db[idx].leadSource = leadSource; changed = true; }
+                                if(precisionIsPresent && getPrecisionValue(db[idx].precisionStatus) !== precisionStatus) { db[idx].precisionStatus = precisionStatus; changed = true; }
+                                if(parts.length > precisionIndex + 1 && !!db[idx].phoneBooked !== phoneBooked) { db[idx].phoneBooked = phoneBooked; changed = true; }
+                                if(parts.length > precisionIndex + 1 && !!db[idx].formSubmitted !== formSubmitted) { db[idx].formSubmitted = formSubmitted; changed = true; }
+                                if(parts.length > precisionIndex + 3 && getTrackingValue(db[idx].trackingStatus) !== trackingStatus) { db[idx].trackingStatus = trackingStatus; changed = true; }
+                                if(parts.length > precisionIndex + 4 && !!db[idx].dealClosed !== dealClosed) { db[idx].dealClosed = dealClosed; changed = true; }
+                                if(parts.length > precisionIndex + 5 && parseAmount(db[idx].dealAmount) !== dealAmount) { db[idx].dealAmount = dealAmount; changed = true; }
                                 syncBookedFlag(db[idx]);
                                 if(changed) { touchRecord(db[idx]); updatedCount++; }
                             } else {
                                 const now = Date.now();
-                                db.push({ id: wxId, date: vDate, precisionStatus, phoneBooked, formSubmitted, trackingStatus, dealClosed, dealAmount, formFilled, timestamp: now, updatedAt: new Date(now).toISOString() });
+                                db.push({ id: wxId, date: vDate, leadSource, precisionStatus, phoneBooked, formSubmitted, trackingStatus, dealClosed, dealAmount, formFilled, timestamp: now, updatedAt: new Date(now).toISOString() });
                                 importedCount++;
                             }
                         }
