@@ -436,6 +436,8 @@
                     <div class="action-bar">
                         <button onclick="copyPeriodMissingList()" class="btn btn-outline">复制周期未约名单</button>
                         <button onclick="copyPeriodAccurateList()" class="btn btn-outline">复制周期精准名单</button>
+                        <button onclick="copyPeriodAccurateFormMissingList()" class="btn btn-outline">复制精准未填表</button>
+                        <button onclick="copyPeriodAccuratePhoneMissingList()" class="btn btn-outline">复制精准未约电话</button>
                         <button onclick="clearPeriodReport()" class="btn btn-outline">清空周期结果</button>
                     </div>
                     <span id="periodHint" class="text-sm text-gray">例如 7月3号 到 7月9号，可以看这个周期整体约成率和精准率。</span>
@@ -1879,7 +1881,8 @@
             const filled = records.filter(isBooked);
             const missing = records.filter(item => !isBooked(item));
             const accurate = records.filter(item => getPrecisionValue(item.precisionStatus) === 'accurate');
-            const accurateMissing = records.filter(item => getPrecisionValue(item.precisionStatus) === 'accurate' && !isBooked(item));
+            const accurateFormMissing = accurate.filter(item => !item.formSubmitted);
+            const accuratePhoneMissing = accurate.filter(item => !item.phoneBooked);
             const accuratePhoneBooked = records.filter(item => getPrecisionValue(item.precisionStatus) === 'accurate' && item.phoneBooked);
             const dealClosed = records.filter(item => item.dealClosed);
             const periodMetrics = getMetricsInRange(startDate, endDate);
@@ -1903,7 +1906,8 @@
                 filled,
                 missing,
                 accurate,
-                accurateMissing,
+                accurateFormMissing,
+                accuratePhoneMissing,
                 accuratePhoneBooked,
                 dealClosed,
                 periodMetrics,
@@ -1920,7 +1924,7 @@
         function renderPeriodReport() {
             if (!currentPeriodState) return;
 
-            const { startDate, endDate, records, filled, missing, accurate, accurateMissing, accuratePhoneBooked, totalDealAmount, totalSpendAmount, grouped, days } = currentPeriodState;
+            const { startDate, endDate, records, filled, missing, accurate, accurateFormMissing, accuratePhoneMissing, accuratePhoneBooked, totalDealAmount, totalSpendAmount, grouped, days } = currentPeriodState;
             const summary = document.getElementById('periodSummary');
             const resultWrap = document.getElementById('periodResults');
             const rate = records.length ? Math.round((filled.length / records.length) * 100) : 0;
@@ -1960,7 +1964,8 @@
                 resultWrap.innerHTML = `
                     ${renderPeriodRoiDashboard()}
                     ${renderPeriodAccurateCopyBlock()}
-                    ${renderPeriodAccurateMissingCopyBlock()}
+                    ${renderPeriodAccurateFormMissingCopyBlock()}
+                    ${renderPeriodAccuratePhoneMissingCopyBlock()}
                     <div class="empty-panel">
                         <div class="res-title text-green">这个周期全部已约</div>
                         <div class="text-sm">${startDate} 到 ${endDate} 的 +V 人员都已经标记为已约。</div>
@@ -1968,19 +1973,20 @@
                     ${renderPeriodDetailTable()}
                     <div class="daily-breakdown">${breakdownHtml}</div>
                 `;
-                document.getElementById('periodHint').innerText = `${startDate} 到 ${endDate} 没有未约人员，精准 ${accurate.length} 人，ROI ${formatRoi(totalDealAmount, totalSpendAmount)}。`;
+                document.getElementById('periodHint').innerText = `${startDate} 到 ${endDate} 没有未约人员，精准 ${accurate.length} 人；精准未填表 ${accurateFormMissing.length} 人，精准未约电话 ${accuratePhoneMissing.length} 人，ROI ${formatRoi(totalDealAmount, totalSpendAmount)}。`;
                 return;
             }
 
             resultWrap.innerHTML = `
                 ${renderPeriodRoiDashboard()}
                 ${renderPeriodMissingCopyBlock()}
-                ${renderPeriodAccurateMissingCopyBlock()}
+                ${renderPeriodAccurateFormMissingCopyBlock()}
+                ${renderPeriodAccuratePhoneMissingCopyBlock()}
                 ${renderPeriodAccurateCopyBlock()}
                 ${renderPeriodDetailTable()}
                 <div class="daily-breakdown">${breakdownHtml}</div>
             `;
-            document.getElementById('periodHint').innerText = `${startDate} 到 ${endDate} 共有 ${missing.length} 人未约，精准 ${accurate.length} 人，其中精准但未约 ${accurateMissing.length} 人，ROI ${formatRoi(totalDealAmount, totalSpendAmount)}。`;
+            document.getElementById('periodHint').innerText = `${startDate} 到 ${endDate} 共有 ${missing.length} 人未约，精准 ${accurate.length} 人；精准未填表 ${accurateFormMissing.length} 人，精准未约电话 ${accuratePhoneMissing.length} 人，ROI ${formatRoi(totalDealAmount, totalSpendAmount)}。`;
         }
 
         function getDateList(startDate, endDate) {
@@ -2117,31 +2123,58 @@
             `;
         }
 
-        function buildPeriodAccurateMissingCopyText() {
+        function buildPeriodGroupedListText(title, records) {
             if (!currentPeriodState) return '';
-            const { startDate, endDate, accurateMissing } = currentPeriodState;
-            const groupedAccurateMissing = groupRecordsByDate(accurateMissing);
-            const dates = Object.keys(groupedAccurateMissing).sort();
+            const { startDate, endDate } = currentPeriodState;
+            const groupedList = groupRecordsByDate(records);
+            const dates = Object.keys(groupedList).sort();
             const sections = dates.map(date => {
-                const names = groupedAccurateMissing[date].map(item => item.id).join('\n');
-                return `${date}（${groupedAccurateMissing[date].length}人）\n${names}`;
+                const names = groupedList[date].map(item => item.id).join('\n');
+                return `${date}（${groupedList[date].length}人）\n${names}`;
             });
-            return `${startDate} 到 ${endDate} 精准但未约名单（共 ${accurateMissing.length} 人）\n\n${sections.join('\n\n')}`;
+            return `${startDate} 到 ${endDate} ${title}（共 ${records.length} 人）\n\n${sections.join('\n\n')}`;
         }
 
-        function renderPeriodAccurateMissingCopyBlock() {
-            const { startDate, endDate, accurateMissing } = currentPeriodState;
-            const copyText = buildPeriodAccurateMissingCopyText();
+        function buildPeriodAccurateFormMissingCopyText() {
+            if (!currentPeriodState) return '';
+            return buildPeriodGroupedListText('精准但未填表单名单', currentPeriodState.accurateFormMissing);
+        }
+
+        function buildPeriodAccuratePhoneMissingCopyText() {
+            if (!currentPeriodState) return '';
+            return buildPeriodGroupedListText('精准但未约电话名单', currentPeriodState.accuratePhoneMissing);
+        }
+
+        function renderPeriodAccurateFormMissingCopyBlock() {
+            const { startDate, endDate, accurateFormMissing } = currentPeriodState;
+            const copyText = buildPeriodAccurateFormMissingCopyText();
             return `
                 <div class="copy-panel">
                     <div class="copy-panel-head">
                         <div>
-                            <div class="copy-title">${startDate} 到 ${endDate} 精准但未约名单</div>
-                            <div class="text-sm text-gray">共 ${accurateMissing.length} 人，建议优先跟进。</div>
+                            <div class="copy-title">${startDate} 到 ${endDate} 精准但未填表单</div>
+                            <div class="text-sm text-gray">共 ${accurateFormMissing.length} 人，用来单独催填表。</div>
                         </div>
-                        <button onclick="copyPeriodAccurateMissingList()" class="btn btn-success">复制精准但未约</button>
+                        <button onclick="copyPeriodAccurateFormMissingList()" class="btn btn-success">复制精准未填表</button>
                     </div>
-                    <textarea id="periodAccurateMissingCopyText" class="copy-textarea" readonly>${escapeHtml(copyText)}</textarea>
+                    <textarea id="periodAccurateFormMissingCopyText" class="copy-textarea" readonly>${escapeHtml(copyText)}</textarea>
+                </div>
+            `;
+        }
+
+        function renderPeriodAccuratePhoneMissingCopyBlock() {
+            const { startDate, endDate, accuratePhoneMissing } = currentPeriodState;
+            const copyText = buildPeriodAccuratePhoneMissingCopyText();
+            return `
+                <div class="copy-panel">
+                    <div class="copy-panel-head">
+                        <div>
+                            <div class="copy-title">${startDate} 到 ${endDate} 精准但未约电话</div>
+                            <div class="text-sm text-gray">共 ${accuratePhoneMissing.length} 人，用来单独催电话。</div>
+                        </div>
+                        <button onclick="copyPeriodAccuratePhoneMissingList()" class="btn btn-success">复制精准未约电话</button>
+                    </div>
+                    <textarea id="periodAccuratePhoneMissingCopyText" class="copy-textarea" readonly>${escapeHtml(copyText)}</textarea>
                 </div>
             `;
         }
@@ -2200,20 +2233,9 @@
             }
         }
 
-        async function copyPeriodAccurateMissingList() {
-            if (!currentPeriodState) generatePeriodReport();
-            if (!currentPeriodState) return;
-
-            if (currentPeriodState.accurateMissing.length === 0) {
-                alert("当前周期没有精准但未约人员。");
-                return;
-            }
-
-            const copyBox = document.getElementById('periodAccurateMissingCopyText');
-            const text = copyBox ? copyBox.value : buildPeriodAccurateMissingCopyText();
+        async function copyTextWithFallback(text) {
             try {
                 await navigator.clipboard.writeText(text);
-                alert(`已复制 ${currentPeriodState.accurateMissing.length} 个精准但未约人员。`);
             } catch (error) {
                 const helper = document.createElement('textarea');
                 helper.value = text;
@@ -2221,8 +2243,37 @@
                 helper.select();
                 document.execCommand('copy');
                 document.body.removeChild(helper);
-                alert(`已复制 ${currentPeriodState.accurateMissing.length} 个精准但未约人员。`);
             }
+        }
+
+        async function copyPeriodAccurateFormMissingList() {
+            if (!currentPeriodState) generatePeriodReport();
+            if (!currentPeriodState) return;
+
+            if (currentPeriodState.accurateFormMissing.length === 0) {
+                alert("当前周期没有精准但未填表单人员。");
+                return;
+            }
+
+            const copyBox = document.getElementById('periodAccurateFormMissingCopyText');
+            const text = copyBox ? copyBox.value : buildPeriodAccurateFormMissingCopyText();
+            await copyTextWithFallback(text);
+            alert(`已复制 ${currentPeriodState.accurateFormMissing.length} 个精准但未填表单人员。`);
+        }
+
+        async function copyPeriodAccuratePhoneMissingList() {
+            if (!currentPeriodState) generatePeriodReport();
+            if (!currentPeriodState) return;
+
+            if (currentPeriodState.accuratePhoneMissing.length === 0) {
+                alert("当前周期没有精准但未约电话人员。");
+                return;
+            }
+
+            const copyBox = document.getElementById('periodAccuratePhoneMissingCopyText');
+            const text = copyBox ? copyBox.value : buildPeriodAccuratePhoneMissingCopyText();
+            await copyTextWithFallback(text);
+            alert(`已复制 ${currentPeriodState.accuratePhoneMissing.length} 个精准但未约电话人员。`);
         }
 
         async function copyPeriodAccurateList() {
