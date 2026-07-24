@@ -1270,6 +1270,10 @@
                 .replace(/'/g, '&#39;');
         }
 
+        function encodeIdForAction(id) {
+            return encodeURIComponent(String(id || ''));
+        }
+
         function parseIdList(text) {
             const seen = new Set();
             const list = [];
@@ -2376,10 +2380,11 @@
             updateDbDateFilterHint(visibleRecords.length);
             visibleRecords.forEach((item) => {
                 const tr = document.createElement('tr');
+                const encodedId = encodeIdForAction(item.id);
                 tr.innerHTML = `
-                    <td class="cell-id" title="${item.id}">${item.id}</td>
+                    <td class="cell-id" title="${escapeHtml(item.id)}">${escapeHtml(item.id)}</td>
                     <td>
-                        <input type="date" value="${item.date || ''}" onchange="updateVDate('${item.id.replace(/'/g, "\\'")}', this.value)" class="table-input">
+                        <input type="date" value="${item.date || ''}" onchange="updateVDateById('${encodedId}', this.value)" class="table-input">
                     </td>
                     <td>${renderLeadSourceSelect(item.id, item.leadSource)}</td>
                     <td>${renderPrecisionSelect(item.id, item.precisionStatus)}</td>
@@ -2389,7 +2394,7 @@
                     <td>${renderDealSelect(item.id, item.dealClosed)}</td>
                     <td>${renderDealAmountInput(item.id, item.dealAmount)}</td>
                     <td style="text-align: right;">
-                        <button onclick="deleteItem('${item.id.replace(/'/g, "\\'")}')" class="btn-sm bg-red-light">删除</button>
+                        <button onclick="deleteItemById('${encodedId}')" class="btn-sm bg-red-light">删除</button>
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -2397,7 +2402,8 @@
         }
 
         // --- 辅助功能：更新与删除 ---
-        function updateVDate(id, value) {
+        function updateVDateById(encodedId, value) {
+            const id = decodeURIComponent(encodedId || '');
             const index = db.findIndex(item => item.id === id);
             if (index > -1 && value && db[index].date !== value) {
                 pushUndo(`修改 +V 日期：${db[index].id}`);
@@ -2406,6 +2412,10 @@
                 saveDb();
                 refreshViews();
             }
+        }
+
+        function updateVDate(id, value) {
+            updateVDateById(encodeIdForAction(id), value);
         }
 
         function updatePrecisionById(encodedId, value) {
@@ -2511,13 +2521,26 @@
             searchData();
         }
 
-        function deleteItem(id) {
-            if(confirm(`确定要删除ID "${id}" 的记录吗？`)) {
-                pushUndo(`删除记录：${id}`);
-                db = db.filter(item => item.id !== id);
+        function deleteItemById(encodedId) {
+            const id = decodeURIComponent(encodedId || '');
+            const index = db.findIndex(item => item.id === id);
+            if (index === -1) {
+                alert("没有找到这条记录，可能已经被删除或同步更新。");
+                refreshViews();
+                return;
+            }
+
+            if(confirm(`确定要删除ID "${db[index].id}" 的记录吗？`)) {
+                pushUndo(`删除记录：${db[index].id}`);
+                db.splice(index, 1);
                 saveDb();
                 refreshViews();
+                searchData();
             }
+        }
+
+        function deleteItem(id) {
+            deleteItemById(encodeIdForAction(id));
         }
 
         function clearData() {
